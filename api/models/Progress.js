@@ -29,8 +29,7 @@ const progressSchema = new mongoose.Schema({
     4: { type: Boolean, default: false }
   },
   flagsEntered: {
-    type: Map,
-    of: String,
+    type: Object,
     default: {}
   },
   attemptCounts: {
@@ -44,6 +43,10 @@ const progressSchema = new mongoose.Schema({
     2: { type: Boolean, default: false },
     3: { type: Boolean, default: false },
     4: { type: Boolean, default: false }
+  },
+  completed: {
+    type: Boolean,
+    default: false
   },
   lastUpdated: {
     type: Date,
