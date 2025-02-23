@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const User = require('./models/User');
-const Progress = require('./models/Progress');
+const User = require('./api/models/User');
+const Progress = require('./api/models/Progress');
 require('dotenv').config();
 
 mongoose.set('strictQuery', true);
