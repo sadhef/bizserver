@@ -1,21 +1,22 @@
 {
-    "version": 2,
-    "builds": [
+    "headers": [
       {
-        "src": "api/**/*.js",
-        "use": "@vercel/node"
+        "source": "/api/(.*)",
+        "headers": [
+          {
+            "key": "Access-Control-Allow-Origin",
+            "value": "https://bizclient12.vercel.app"
+          },
+          {
+            "key": "Access-Control-Allow-Methods",
+            "value": "GET,POST,PUT,DELETE,OPTIONS"
+          },
+          {
+            "key": "Access-Control-Allow-Headers",
+            "value": "Content-Type, Authorization"
+          }
+        ]
       }
-    ],
-    "routes": [
-      {
-        "src": "/api/(.*)",
-        "dest": "/api"
-      }
-    ],
-    "functions": {
-      "api/**/*.js": {
-        "memory": 1024,
-        "maxDuration": 10
-      }
-    }
+    ]
   }
+  
