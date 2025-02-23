@@ -1,18 +1,21 @@
 {
     "name": "bizserver",
     "version": "1.0.0",
+    "private": true,
     "main": "api/index.js",
     "scripts": {
       "start": "node api/index.js",
-      "dev": "nodemon api/index.js"
+      "build": "echo 'No build required'",
+      "dev": "nodemon api/index.js",
+      "deploy": "vercel deploy --prod"
     },
     "dependencies": {
       "cors": "^2.8.5",
-      "dotenv": "^16.3.1",
       "express": "^4.18.2"
     },
     "devDependencies": {
-      "nodemon": "^3.0.2"
+      "nodemon": "^3.0.2",
+      "vercel": "^32.3.0"
     },
     "engines": {
       "node": "18.x"
