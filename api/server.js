@@ -231,6 +231,8 @@ app.delete('/delete-user/:email', async (req, res) => {
   }
 });
 
+app.use('/api', router);
+
 // Start server
 const PORT = process.env.PORT || 5000;
 
