@@ -7,9 +7,10 @@ const app = express();
 
 // Enhanced CORS configuration
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: ['http://localhost:3000', 'https://bizclient12.vercel.app'],
   methods: ['GET', 'POST', 'DELETE', 'PUT'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type'],
+  credentials: true
 }));
 
 app.use(express.json());
@@ -126,6 +127,22 @@ app.post('/register', asyncHandler(async (req, res) => {
   users.push(userData);
   await saveData(FILE_PATH_REG, users);
 
+  // Initialize progress data for new user
+  const progressData = await loadData(FILE_PATH_PROGRESS);
+  const newProgress = {
+    userEmail: newData.email,
+    userName: newData.name,
+    startTime: userData.startTime,
+    timeRemaining: 3600,
+    currentLevel: 1,
+    levelStatus: { 1: false, 2: false, 3: false, 4: false },
+    flagsEntered: {},
+    attemptCounts: { 1: 0, 2: 0, 3: 0, 4: 0 },
+    hintUsed: { 1: false, 2: false, 3: false, 4: false }
+  };
+  progressData.push(newProgress);
+  await saveData(FILE_PATH_PROGRESS, progressData);
+
   res.status(201).json({
     message: 'Registration successful',
     userEmail: newData.email,
@@ -195,6 +212,11 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Start server
 const PORT = process.env.PORT || 5000;
 
@@ -204,6 +226,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
       console.log('Data directory initialized');
+      console.log('CORS enabled for:', ['http://localhost:3000', 'https://bizclient12.vercel.app']);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
