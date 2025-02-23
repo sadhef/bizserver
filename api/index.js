@@ -1,17 +1,13 @@
 const express = require('express');
 const cors = require('cors');
-
-// Import route handlers
-const registerHandler = require('./routes/register');
-const getTimeHandler = require('./routes/get-time');
-const saveProgressHandler = require('./routes/save-progress');
-const deleteUserHandler = require('./routes/delete-user');
+const connectDB = require('./config/db');
+const User = require('./models/User');
+const Progress = require('./models/Progress');
 
 const app = express();
 
-// Initialize global storage
-global.usersData = global.usersData || [];
-global.progressData = global.progressData || [];
+// Connect to MongoDB
+connectDB();
 
 // CORS configuration
 app.use(cors({
@@ -23,6 +19,12 @@ app.use(cors({
 
 app.use(express.json());
 
+// Import route handlers
+const registerHandler = require('./routes/register');
+const getTimeHandler = require('./routes/get-time');
+const saveProgressHandler = require('./routes/save-progress');
+const deleteUserHandler = require('./routes/delete-user');
+
 // Basic route for testing
 app.get('/api', (req, res) => {
   res.json({ 
@@ -32,13 +34,24 @@ app.get('/api', (req, res) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    users: global.usersData.length,
-    progress: global.progressData.length
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    const userCount = await User.countDocuments();
+    const progressCount = await Progress.countDocuments();
+    
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      users: userCount,
+      progress: progressCount,
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Database connection error'
+    });
+  }
 });
 
 // Route handlers
@@ -48,13 +61,32 @@ app.post('/api/save-progress', saveProgressHandler);
 app.delete('/api/delete-user', deleteUserHandler);
 
 // Get all registrations (admin only)
-app.get('/api/registrations', (req, res) => {
-  res.json(global.usersData);
+app.get('/api/registrations', async (req, res) => {
+  try {
+    const users = await User.find().select('-__v');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching users' });
+  }
 });
 
+app.get('/api/check-env', (req, res) => {
+    res.json({
+      nodeEnv: process.env.NODE_ENV,
+      corsOrigin: process.env.CORS_ORIGIN,
+      mongodbConnected: !!mongoose.connection.readyState,
+      timestamp: new Date().toISOString()
+    });
+  });
+
 // Get all progress (admin only)
-app.get('/api/progress', (req, res) => {
-  res.json(global.progressData);
+app.get('/api/progress', async (req, res) => {
+  try {
+    const progress = await Progress.find().select('-__v');
+    res.json(progress);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching progress' });
+  }
 });
 
 // Error handling middleware
