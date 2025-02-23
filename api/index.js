@@ -4,11 +4,11 @@ require('dotenv').config();
 
 const app = express();
 
-// In-memory storage for Vercel serverless environment
+// In-memory storage
 let usersData = [];
 let progressData = [];
 
-// Enhanced CORS configuration
+// CORS configuration
 app.use(cors({
   origin: ['http://localhost:3000', 'https://bizclient12.vercel.app'],
   methods: ['GET', 'POST', 'DELETE', 'PUT'],
@@ -18,18 +18,13 @@ app.use(cors({
 
 app.use(express.json());
 
-// Error handling middleware
-const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Basic route
+app.get('/api', (req, res) => {
+  res.json({ message: 'API is working!' });
 });
 
-// Get user's remaining time endpoint
-app.get('/get-time/:email', asyncHandler(async (req, res) => {
+// Get time
+app.get('/api/get-time/:email', (req, res) => {
   const { email } = req.params;
   const userProgress = progressData.find(p => p.userEmail === email);
 
@@ -60,20 +55,20 @@ app.get('/get-time/:email', asyncHandler(async (req, res) => {
   
   userProgress.timeRemaining = timeRemaining;
   res.json({ timeRemaining });
-}));
+});
 
-// Get registrations endpoint
-app.get('/get-registrations', (req, res) => {
+// Get registrations
+app.get('/api/get-registrations', (req, res) => {
   res.json(usersData);
 });
 
-// Get progress endpoint
-app.get('/get-progress', (req, res) => {
+// Get progress
+app.get('/api/get-progress', (req, res) => {
   res.json(progressData);
 });
 
-// Registration endpoint
-app.post('/register', asyncHandler(async (req, res) => {
+// Register
+app.post('/api/register', (req, res) => {
   const newData = req.body;
   
   if (!newData.email || !newData.name || !newData.institution) {
@@ -93,7 +88,6 @@ app.post('/register', asyncHandler(async (req, res) => {
 
   usersData.push(userData);
 
-  // Initialize progress data
   const newProgress = {
     userEmail: newData.email,
     userName: newData.name,
@@ -112,10 +106,10 @@ app.post('/register', asyncHandler(async (req, res) => {
     userEmail: newData.email,
     userName: newData.name
   });
-}));
+});
 
-// Save progress endpoint
-app.post('/save-progress', asyncHandler(async (req, res) => {
+// Save progress
+app.post('/api/save-progress', (req, res) => {
   const { userEmail, ...progressUpdate } = req.body;
   
   if (!userEmail) {
@@ -139,10 +133,10 @@ app.post('/save-progress', asyncHandler(async (req, res) => {
   }
 
   res.json({ message: 'Progress saved successfully' });
-}));
+});
 
-// Delete user endpoint
-app.delete('/delete-user/:email', asyncHandler(async (req, res) => {
+// Delete user
+app.delete('/api/delete-user/:email', (req, res) => {
   const { email } = req.params;
   
   const userExists = usersData.some(user => user.email === email);
@@ -154,9 +148,14 @@ app.delete('/delete-user/:email', asyncHandler(async (req, res) => {
   progressData = progressData.filter(progress => progress.userEmail !== email);
 
   res.json({ message: 'User deleted successfully' });
-}));
+});
 
-// Error handling middleware
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -164,14 +163,5 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
-
-// Only start the server if not being imported
-if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log('CORS enabled for:', ['http://localhost:3000', 'https://bizclient12.vercel.app']);
-  });
-}
 
 module.exports = app;
