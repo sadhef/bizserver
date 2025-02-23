@@ -29,7 +29,7 @@ connectDB();
 // 🔹 CORS Configuration (FIXED)
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'https://bizclient12.vercel.app',
+    origin: process.env.CORS_ORIGIN || 'https://biztrasctf.vercel.app',
     methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
