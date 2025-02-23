@@ -29,7 +29,7 @@ connectDB();
 
 // CORS Config
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://bizclient12.vercel.app'],
+  origin: ['http://localhost:3000', 'https://bizclient12.vercel.app','https://bizserver.vercel.app/api'],
   methods: ['GET', 'POST', 'DELETE', 'PUT'],
   allowedHeaders: ['Content-Type'],
   credentials: true
