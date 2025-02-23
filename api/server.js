@@ -29,9 +29,10 @@ connectDB();
 
 // CORS Config
 app.use(cors({
-  origin: "https://bizclient12.vercel.app", // Allow only your frontend
-  methods: "GET,POST,PUT,DELETE,OPTIONS",  // Allowed methods
-  allowedHeaders: "Content-Type, Authorization", // Allowed headers
+  origin: ['http://localhost:3000', 'https://bizclient12.vercel.app'],
+  methods: ['GET', 'POST', 'DELETE', 'PUT'],
+  allowedHeaders: ['Content-Type'],
+  credentials: true
 }));
 
 app.use(express.json());
