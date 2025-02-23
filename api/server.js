@@ -28,14 +28,15 @@ const connectDB = async () => {
 connectDB();
 
 // CORS Config
-app.use(cors({
-  origin: ['http://localhost:3000', 'https://bizclient12.vercel.app'],
-  methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'], // Add OPTIONS
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allow Authorization
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: ['https://bizclient12.vercel.app'],
+    methods: ['GET', 'POST', 'DELETE', 'PUT'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true,
+  })
+);
 
-app.options('*', cors());
 
 app.use(express.json());
 
@@ -49,7 +50,7 @@ app.get('/health', (req, res) => {
 });
 
 // Get all registrations
-app.get('/api/register', async (req, res) => {
+app.get('/get-registrations', async (req, res) => {
   try {
     const users = await User.find().lean();
     res.json(users);
@@ -60,7 +61,7 @@ app.get('/api/register', async (req, res) => {
 });
 
 // Get all progress
-app.get('/api/get-progress', async (req, res) => {
+app.get('/get-progress', async (req, res) => {
   try {
     const progress = await Progress.find().lean();
     res.json(progress);
@@ -71,7 +72,7 @@ app.get('/api/get-progress', async (req, res) => {
 });
 
 // Registration endpoint
-app.post('/api/register', async (req, res) => {
+app.post('/register', async (req, res) => {
   try {
     const { email, name, institution, phone } = req.body;
 
@@ -120,7 +121,7 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-app.get('/api/get-time/:email', async (req, res) => {
+app.get('/get-time/:email', async (req, res) => {
     try {
       const { email } = req.params;
       let progress = await Progress.findOne({ userEmail: email }).lean();
@@ -166,7 +167,7 @@ app.get('/api/get-time/:email', async (req, res) => {
   });
 
 // Save progress endpoint
-app.post('/api/save-progress', async (req, res) => {
+app.post('/save-progress', async (req, res) => {
   try {
     const { 
       userEmail, 
@@ -212,7 +213,7 @@ app.post('/api/save-progress', async (req, res) => {
 });
 
 // Delete user endpoint
-app.delete('/api/delete-user/:email', async (req, res) => {
+app.delete('/delete-user/:email', async (req, res) => {
   try {
     const { email } = req.params;
     
