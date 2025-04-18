@@ -65,16 +65,10 @@ exports.register = async (req, res, next) => {
       throw new AppError(`Failed to create user: ${createError.message}`, 500);
     }
     
-    // Create initial progress for the user
+    // Create initial progress for the user with the current time limit setting
     try {
-      const progress = new Progress({
-        userId: user._id,
-        startTime: new Date(),
-        timeRemaining: 3600, // 1 hour in seconds
-        currentLevel: 1
-      });
-      
-      await progress.save();
+      // Use the static method that gets time limit from settings
+      const progress = await Progress.createWithTimeLimit(user._id);
       
       console.log('✅ Initial progress created for user:', user._id);
     } catch (progressError) {

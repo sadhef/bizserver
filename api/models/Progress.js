@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const Setting = require('./Setting');
 
 const progressSchema = new mongoose.Schema({
   userId: {
@@ -10,9 +11,13 @@ const progressSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  totalTimeLimit: {
+    type: Number,
+    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
+  },
   timeRemaining: {
     type: Number,
-    default: 3600 // Default time limit: 1 hour
+    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
   },
   currentLevel: {
     type: Number,
@@ -106,6 +111,23 @@ progressSchema.methods.useHint = function(levelNumber) {
   this.hintsUsed.set(levelNumber.toString(), true);
   this.lastUpdated = new Date();
   return this.save();
+};
+
+// Static method to create a new progress with the current time limit from settings
+progressSchema.statics.createWithTimeLimit = async function(userId) {
+  // Get current time limit from settings
+  const settings = await Setting.getSettings();
+  const timeLimit = settings ? settings.defaultTimeLimit : 3600; // Default to 1 hour if no settings
+  
+  const progress = await this.create({
+    userId,
+    totalTimeLimit: timeLimit,
+    timeRemaining: timeLimit,
+    startTime: new Date(),
+    currentLevel: 1
+  });
+  
+  return progress;
 };
 
 // Pre-save hook to update lastUpdated

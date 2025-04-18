@@ -1,5 +1,6 @@
 const Challenge = require('../models/Challenge');
 const Progress = require('../models/Progress');
+const Setting = require('../models/Setting');
 const { AppError } = require('../../utils/errorHandler');
 
 // Get all challenges (admin only)
@@ -187,8 +188,9 @@ exports.getCurrentChallenge = async (req, res, next) => {
     // Calculate remaining time
     const now = new Date();
     const startTime = new Date(progress.startTime);
+    const totalTimeLimit = progress.totalTimeLimit || 3600; // Use custom time limit or fall back to 1 hour
     const elapsedSeconds = Math.floor((now - startTime) / 1000);
-    const timeRemaining = Math.max(3600 - elapsedSeconds, 0);
+    const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
     
     // Update time remaining
     progress.timeRemaining = timeRemaining;
@@ -207,7 +209,8 @@ exports.getCurrentChallenge = async (req, res, next) => {
       hint: hintUsed ? challenge.hint : null,
       attemptCount,
       hintUsed,
-      timeRemaining
+      timeRemaining,
+      totalTimeLimit
     };
     
     res.status(200).json({
@@ -216,7 +219,8 @@ exports.getCurrentChallenge = async (req, res, next) => {
       progress: {
         currentLevel: progress.currentLevel,
         completedLevels: progress.getCompletedLevels(),
-        timeRemaining
+        timeRemaining,
+        totalTimeLimit
       }
     });
   } catch (error) {

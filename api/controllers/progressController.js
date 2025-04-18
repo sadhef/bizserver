@@ -1,8 +1,8 @@
 const Progress = require('../models/Progress');
 const User = require('../models/User');
 const Challenge = require('../models/Challenge');
+const Setting = require('../models/Setting');
 const { AppError } = require('../../utils/errorHandler');
-const config = require('../../config/config');
 
 /**
  * Get progress for the current user
@@ -20,8 +20,9 @@ exports.getMyProgress = async (req, res, next) => {
     // Calculate current time remaining
     const now = new Date();
     const startTime = new Date(progress.startTime);
+    const totalTimeLimit = progress.totalTimeLimit || 3600; // Default to 1 hour if not set
     const elapsedSeconds = Math.floor((now - startTime) / 1000);
-    const timeRemaining = Math.max(config.CHALLENGE.DEFAULT_TIME_LIMIT - elapsedSeconds, 0);
+    const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
     
     // Update time remaining
     progress.timeRemaining = timeRemaining;
@@ -36,6 +37,7 @@ exports.getMyProgress = async (req, res, next) => {
     const progressData = {
       currentLevel: progress.currentLevel,
       timeRemaining,
+      totalTimeLimit: progress.totalTimeLimit,
       completedLevels,
       totalLevels,
       completed: progress.completed,
@@ -127,6 +129,10 @@ exports.getProgressStats = async (req, res, next) => {
       avgCompletionTime = Math.round(totalTime / completedProgress.length);
     }
     
+    // Get current default time limit setting
+    const settings = await Setting.findOne();
+    const defaultTimeLimit = settings ? settings.defaultTimeLimit : 3600;
+    
     res.status(200).json({
       status: 'success',
       stats: {
@@ -137,7 +143,8 @@ exports.getProgressStats = async (req, res, next) => {
         expiredUsers,
         completionRate: totalUsers ? (completedUsers / totalUsers) * 100 : 0,
         levelCompletion,
-        avgCompletionTime
+        avgCompletionTime,
+        defaultTimeLimit
       }
     });
   } catch (error) {
@@ -212,17 +219,23 @@ exports.updateUserProgress = async (req, res, next) => {
     const {
       currentLevel,
       timeRemaining,
+      totalTimeLimit,
       completed,
       resetProgress
     } = req.body;
     
     // Handle reset progress option
     if (resetProgress) {
+      // Get current settings for default time limit
+      const settings = await Setting.findOne();
+      const defaultTimeLimit = settings ? settings.defaultTimeLimit : 3600;
+      
       await Progress.findOneAndUpdate(
         { userId: req.params.userId },
         {
           currentLevel: 1,
-          timeRemaining: config.CHALLENGE.DEFAULT_TIME_LIMIT,
+          totalTimeLimit: defaultTimeLimit,
+          timeRemaining: defaultTimeLimit,
           levelStatus: new Map(),
           flagsAttempted: new Map(),
           attemptCounts: new Map(),
@@ -250,6 +263,25 @@ exports.updateUserProgress = async (req, res, next) => {
     
     if (timeRemaining !== undefined) {
       updateData.timeRemaining = timeRemaining;
+    }
+    
+    if (totalTimeLimit !== undefined) {
+      updateData.totalTimeLimit = totalTimeLimit;
+      
+      // If time limit is being updated, also update remaining time proportionally
+      if (timeRemaining === undefined) {
+        const progress = await Progress.findOne({ userId: req.params.userId });
+        if (progress) {
+          // Calculate new remaining time proportionally if user already started
+          const oldTimeLimit = progress.totalTimeLimit || 3600;
+          const oldTimeRemaining = progress.timeRemaining || 0;
+          const ratio = oldTimeRemaining / oldTimeLimit;
+          
+          updateData.timeRemaining = Math.round(totalTimeLimit * ratio);
+        } else {
+          updateData.timeRemaining = totalTimeLimit;
+        }
+      }
     }
     
     if (completed !== undefined) {
