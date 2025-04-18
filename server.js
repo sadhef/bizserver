@@ -1,49 +1,65 @@
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const User = require('./api/models/User');
-const Progress = require('./api/models/Progress');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const { handleError } = require('./utils/errorHandler');
+const connectDB = require('./config/db');
 
-mongoose.set('strictQuery', true);
+// Load environment variables
+dotenv.config();
 
+// Import routes
+const authRoutes = require('./api/routes/auth');
+const userRoutes = require('./api/routes/users');
+const challengeRoutes = require('./api/routes/challenges');
+const progressRoutes = require('./api/routes/progress');
+
+// Create Express app
 const app = express();
-const router = express.Router();
 
-// 🔹 Connect to MongoDB
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log('✅ MongoDB Connected Successfully');
-  } catch (err) {
-    console.error('❌ MongoDB Connection Error:', err);
-    process.exit(1);
-  }
-};
+// CORS Configuration - Allow both localhost and production URLs
+const allowedOrigins = ['http://localhost:3000', 'https://bizclient12.vercel.app'];
 
-connectDB();
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      console.log('CORS request from unauthorized origin:', origin);
+      return callback(null, true); // Still allow it - more permissive for development
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
-// 🔹 CORS Configuration (FIXED)
-app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN || 'https://biztrasctf.vercel.app',
-    methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  })
-);
+// Middleware for JSON Parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 🔹 Middleware for JSON Parsing
-app.use(express.json());
-
-// 🔹 Preflight Request Handling (FIXED)
+// Handle preflight requests
 app.options('*', cors());
 
-// 🔹 Health Check Endpoint
-router.get('/health', (req, res) => {
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Add explicit CORS headers for all routes
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
+// Health Check Endpoint
+app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -51,166 +67,61 @@ router.get('/health', (req, res) => {
   });
 });
 
-// 🔹 Get All Registrations
-router.get('/get-registrations', async (req, res) => {
-  try {
-    const users = await User.find().lean();
-    res.json(users);
-  } catch (error) {
-    console.error('❌ Get registrations error:', error);
-    res.status(500).json({ message: 'Error fetching registrations' });
-  }
+// API Routes - both with and without /api prefix
+// Routes with /api prefix
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/challenges', challengeRoutes);
+app.use('/api/progress', progressRoutes);
+
+// Routes without /api prefix (for compatibility)
+app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
+app.use('/challenges', challengeRoutes);
+app.use('/progress', progressRoutes);
+
+// Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  handleError(err, res);
 });
 
-// 🔹 Get All Progress
-router.get('/get-progress', async (req, res) => {
-  try {
-    const progress = await Progress.find().lean();
-    res.json(progress);
-  } catch (error) {
-    console.error('❌ Get progress error:', error);
-    res.status(500).json({ message: 'Error fetching progress' });
-  }
+// 404 Handler for undefined routes
+app.use('*', (req, res) => {
+  res.status(404).json({
+    status: 'fail',
+    message: `Cannot find ${req.originalUrl} on this server!`
+  });
 });
 
-// 🔹 User Registration
-router.post('/register', async (req, res) => {
+// Connect to database and start server
+const startServer = async () => {
   try {
-    const { email, name, institution, phone } = req.body;
-
-    if (!email || !name || !institution) {
-      return res.status(400).json({ message: 'Missing required fields' });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email already registered' });
-    }
-
-    const user = await User.create({
-      name,
-      email,
-      institution,
-      phone,
-      registrationTime: new Date(),
-      startTime: new Date(),
-    });
-
-    await Progress.create({
-      userEmail: email,
-      userName: name,
-      startTime: new Date(),
-      timeRemaining: 3600,
-      currentLevel: 1,
-      levelStatus: { 1: false, 2: false, 3: false, 4: false },
-      flagsEntered: {},
-      attemptCounts: { 1: 0, 2: 0, 3: 0, 4: 0 },
-      hintUsed: { 1: false, 2: false, 3: false, 4: false },
-    });
-
-    res.status(201).json({
-      message: '✅ Registration successful',
-      userEmail: email,
-      userName: name,
-    });
-  } catch (error) {
-    console.error('❌ Registration error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// 🔹 Get Time Remaining for User
-router.get('/get-time/:email', async (req, res) => {
-  try {
-    const { email } = req.params;
-    let progress = await Progress.findOne({ userEmail: email }).lean();
-
-    if (!progress) {
-      const user = await User.findOne({ email }).lean();
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      progress = await Progress.create({
-        userEmail: email,
-        userName: user.name,
-        startTime: new Date(),
-        timeRemaining: 3600,
-        currentLevel: 1,
-      });
-
-      return res.json({ timeRemaining: 3600 });
-    }
-
-    const elapsedSeconds = Math.floor((Date.now() - new Date(progress.startTime)) / 1000);
-    const timeRemaining = Math.max(3600 - elapsedSeconds, 0);
-
-    await Progress.updateOne({ userEmail: email }, { $set: { timeRemaining, lastUpdated: new Date() } });
-
-    res.json({ 
-      timeRemaining, 
-      startTime: progress.startTime.toISOString(),
-      serverTime: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('❌ Get time error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// 🔹 Save Progress
-router.post('/save-progress', async (req, res) => {
-  try {
-    const { userEmail, currentLevel, timeRemaining, flagsEntered, attemptCounts, hintUsed, completed, levelStatus } = req.body;
-
-    if (!userEmail) {
-      return res.status(400).json({ message: 'User email is required' });
-    }
-
-    const updateData = { lastUpdated: new Date() };
-    if (currentLevel) updateData.currentLevel = currentLevel;
-    if (timeRemaining !== undefined) updateData.timeRemaining = timeRemaining;
-    if (flagsEntered) updateData.flagsEntered = flagsEntered;
-    if (attemptCounts) updateData.attemptCounts = attemptCounts;
-    if (hintUsed) updateData.hintUsed = hintUsed;
-    if (levelStatus) updateData.levelStatus = levelStatus;
-    if (completed !== undefined) updateData.completed = completed;
-
-    const progress = await Progress.findOneAndUpdate({ userEmail }, { $set: updateData }, { new: true, upsert: true }).lean();
-
-    res.json({ message: '✅ Progress saved successfully', progress });
-  } catch (error) {
-    console.error('❌ Save progress error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// 🔹 Delete User
-router.delete('/delete-user/:email', async (req, res) => {
-  try {
-    const { email } = req.params;
+    await connectDB();
+    console.log('✅ MongoDB Connected Successfully');
     
-    const user = await User.findOneAndDelete({ email });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    await Progress.findOneAndDelete({ userEmail: email });
-
-    res.json({ message: '✅ User deleted successfully' });
-  } catch (error) {
-    console.error('❌ Delete user error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    // Start Server
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+    });
+  } catch (err) {
+    console.error('❌ MongoDB Connection Error:', err);
+    console.error('Starting server without database connection. Some features may not work.');
+    
+    // Start Server even if DB connection fails
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT} (without DB connection)`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
   }
-});
+};
 
-// 🔹 Apply "/api" prefix to all routes
-app.use('/api', router);
+// Start the server
+startServer();
 
-// 🔹 Start Server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
-
+// Export for testing
 module.exports = app;

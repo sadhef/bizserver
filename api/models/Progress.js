@@ -1,13 +1,9 @@
 const mongoose = require('mongoose');
 
 const progressSchema = new mongoose.Schema({
-  userEmail: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  userName: {
-    type: String,
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     required: true
   },
   startTime: {
@@ -16,37 +12,42 @@ const progressSchema = new mongoose.Schema({
   },
   timeRemaining: {
     type: Number,
-    default: 3600
+    default: 3600 // Default time limit: 1 hour
   },
   currentLevel: {
     type: Number,
     default: 1
   },
+  // Store progress for each level dynamically
   levelStatus: {
-    1: { type: Boolean, default: false },
-    2: { type: Boolean, default: false },
-    3: { type: Boolean, default: false },
-    4: { type: Boolean, default: false }
+    type: Map,
+    of: Boolean,
+    default: () => new Map()
   },
-  flagsEntered: {
-    type: Object,
-    default: {}
+  // Store all flag attempts for each level
+  flagsAttempted: {
+    type: Map,
+    of: [String],
+    default: () => new Map()
   },
+  // Track attempt counts for each level
   attemptCounts: {
-    1: { type: Number, default: 0 },
-    2: { type: Number, default: 0 },
-    3: { type: Number, default: 0 },
-    4: { type: Number, default: 0 }
+    type: Map,
+    of: Number,
+    default: () => new Map()
   },
-  hintUsed: {
-    1: { type: Boolean, default: false },
-    2: { type: Boolean, default: false },
-    3: { type: Boolean, default: false },
-    4: { type: Boolean, default: false }
+  // Track if hints were used for each level
+  hintsUsed: {
+    type: Map, 
+    of: Boolean,
+    default: () => new Map()
   },
   completed: {
     type: Boolean,
     default: false
+  },
+  completedAt: {
+    type: Date
   },
   lastUpdated: {
     type: Date,
@@ -54,4 +55,65 @@ const progressSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Progress', progressSchema);
+// Index for efficient lookups
+progressSchema.index({ userId: 1 });
+
+// Method to check if a level is completed
+progressSchema.methods.isLevelCompleted = function(levelNumber) {
+  return this.levelStatus.get(levelNumber.toString()) || false;
+};
+
+// Method to get all completed levels
+progressSchema.methods.getCompletedLevels = function() {
+  const completedLevels = [];
+  this.levelStatus.forEach((value, key) => {
+    if (value) completedLevels.push(parseInt(key));
+  });
+  return completedLevels.sort((a, b) => a - b);
+};
+
+// Method to update level completion
+progressSchema.methods.completeLevel = function(levelNumber) {
+  this.levelStatus.set(levelNumber.toString(), true);
+  this.lastUpdated = new Date();
+  return this.save();
+};
+
+// Method to add a flag attempt
+progressSchema.methods.addFlagAttempt = function(levelNumber, flag) {
+  const level = levelNumber.toString();
+  
+  // Initialize arrays if they don't exist
+  if (!this.flagsAttempted.has(level)) {
+    this.flagsAttempted.set(level, []);
+  }
+  
+  // Add the flag to attempts
+  const attempts = this.flagsAttempted.get(level) || [];
+  attempts.push(flag);
+  this.flagsAttempted.set(level, attempts);
+  
+  // Increment attempt count
+  const currentCount = this.attemptCounts.get(level) || 0;
+  this.attemptCounts.set(level, currentCount + 1);
+  
+  this.lastUpdated = new Date();
+  return this.save();
+};
+
+// Method to use a hint
+progressSchema.methods.useHint = function(levelNumber) {
+  this.hintsUsed.set(levelNumber.toString(), true);
+  this.lastUpdated = new Date();
+  return this.save();
+};
+
+// Pre-save hook to update lastUpdated
+progressSchema.pre('save', function(next) {
+  this.lastUpdated = new Date();
+  next();
+});
+
+const Progress = mongoose.model('Progress', progressSchema);
+
+module.exports = Progress;
