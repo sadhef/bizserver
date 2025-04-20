@@ -15,6 +15,7 @@ router.get('/data', protect, restrictToCloud, async (req, res, next) => {
       data: {
         reportTitle: report.reportTitle,
         reportDates: report.reportDates,
+        totalSpaceUsed: report.totalSpaceUsed, // Added total space used
         columns: report.columns,
         rows: report.rows,
         updatedAt: report.updatedAt
@@ -29,7 +30,13 @@ router.get('/data', protect, restrictToCloud, async (req, res, next) => {
 // Save cloud report data
 router.post('/save', protect, restrictToCloud, async (req, res, next) => {
   try {
-    const { columns, rows, reportTitle, reportDates } = req.body;
+    const { 
+      columns, 
+      rows, 
+      reportTitle, 
+      reportDates, 
+      totalSpaceUsed // New field
+    } = req.body;
     
     // Validate the data
     if (!columns || !Array.isArray(columns)) {
@@ -51,6 +58,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
     };
     report.columns = columns;
     report.rows = rows;
+    report.totalSpaceUsed = totalSpaceUsed || ''; // Add total space used
     report.updatedBy = req.user.id;
     
     // Save the updated report
@@ -66,7 +74,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
   }
 });
 
-// Get report history (optional) - gets all previous reports
+// Existing other routes remain the same
 router.get('/history', protect, restrictToCloud, async (req, res, next) => {
   try {
     const reports = await CloudReport.find()
@@ -87,7 +95,6 @@ router.get('/history', protect, restrictToCloud, async (req, res, next) => {
   }
 });
 
-// Create a new report (optional)
 router.post('/new', protect, restrictToCloud, async (req, res, next) => {
   try {
     const newReport = await CloudReport.create({

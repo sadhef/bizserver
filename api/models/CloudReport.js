@@ -15,9 +15,15 @@ const cloudReportSchema = new mongoose.Schema({
       default: Date.now
     }
   },
+  // New field for total space used
+  totalSpaceUsed: {
+    type: String,
+    default: '',
+    trim: true
+  },
   columns: {
     type: [String],
-    default: ['Server', 'Status', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'SSL Expiry', 'Remarks']
+    default: ['Server', 'Status', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'SSL Expiry', 'Space Used', 'Remarks']
   },
   rows: {
     type: [mongoose.Schema.Types.Mixed],
