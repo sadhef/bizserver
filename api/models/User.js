@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
     default: false
   },
   isCloud: {
-    type: Boolean,
+    type: Boolean, // Ensure this is defined as Boolean, not String
     default: false
   },
   registrationTime: {
@@ -75,6 +75,30 @@ userSchema.pre('save', async function(next) {
     console.error('Error hashing password:', error);
     next(error);
   }
+});
+
+// Convert string values to proper booleans before saving
+userSchema.pre('save', function(next) {
+  // Ensure isAdmin is always a boolean
+  if (this.isAdmin === 'true' || this.isAdmin === '1' || this.isAdmin === 1) {
+    this.isAdmin = true;
+  } else if (this.isAdmin === 'false' || this.isAdmin === '0' || this.isAdmin === 0) {
+    this.isAdmin = false;
+  }
+  
+  // Ensure isCloud is always a boolean
+  if (this.isCloud === 'true' || this.isCloud === '1' || this.isCloud === 1) {
+    this.isCloud = true;
+  } else if (this.isCloud === 'false' || this.isCloud === '0' || this.isCloud === 0) {
+    this.isCloud = false;
+  }
+  
+  console.log('Normalized user permissions:', {
+    isAdmin: this.isAdmin,
+    isCloud: this.isCloud
+  });
+  
+  next();
 });
 
 // Method to compare password for login

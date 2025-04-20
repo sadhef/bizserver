@@ -7,6 +7,14 @@ const { AppError } = require('../../utils/errorHandler');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 
+// Helper function to ensure boolean values
+const normalizeBoolean = (value) => {
+  if (value === true || value === 'true' || value === 1 || value === '1') {
+    return true;
+  }
+  return false;
+};
+
 // Generate JWT token
 const generateToken = (userId) => {
   return jwt.sign({ id: userId }, JWT_SECRET, {
@@ -44,12 +52,14 @@ exports.register = async (req, res, next) => {
       user = new User({
         name,
         email,
-        password, // Will be hashed by the pre-save hook
+        password,
         phone: phone || '',
         education: education || '',
         institution: institution || '',
         location: location || '',
-        registrationTime: new Date()
+        registrationTime: new Date(),
+        isAdmin: false,
+        isCloud: false // Explicitly set default values for permissions
       });
       
       // Save to database with explicit await
@@ -89,7 +99,8 @@ exports.register = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
-      isAdmin: user.isAdmin,
+      isAdmin: false,
+      isCloud: false,
       registrationTime: user.registrationTime
     };
     
@@ -141,6 +152,17 @@ exports.login = async (req, res, next) => {
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
     
+    // Ensure user permissions are normalized to boolean
+    const isAdminFlag = normalizeBoolean(user.isAdmin);
+    const isCloudFlag = normalizeBoolean(user.isCloud);
+    
+    console.log('User permissions:', {
+      isAdmin: isAdminFlag,
+      isCloud: isCloudFlag,
+      rawIsAdmin: user.isAdmin,
+      rawIsCloud: user.isCloud
+    });
+    
     // Generate token
     const token = generateToken(user._id);
     
@@ -153,7 +175,8 @@ exports.login = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
-      isAdmin: user.isAdmin,
+      isAdmin: isAdminFlag,
+      isCloud: isCloudFlag,
       registrationTime: user.registrationTime,
       lastLogin: user.lastLogin
     };
@@ -178,9 +201,28 @@ exports.getCurrentUser = async (req, res, next) => {
       throw new AppError('User not found', 404);
     }
     
+    // Ensure permissions are properly normalized
+    const isAdminFlag = normalizeBoolean(user.isAdmin);
+    const isCloudFlag = normalizeBoolean(user.isCloud);
+    
+    // Create response object with normalized values
+    const userResponse = {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      education: user.education,
+      institution: user.institution,
+      location: user.location,
+      isAdmin: isAdminFlag,
+      isCloud: isCloudFlag,
+      registrationTime: user.registrationTime,
+      lastLogin: user.lastLogin
+    };
+    
     res.status(200).json({
       status: 'success',
-      user
+      user: userResponse
     });
   } catch (error) {
     next(error);
@@ -200,11 +242,20 @@ exports.adminLogin = async (req, res, next) => {
     }
     
     // Find user and check if admin
-    const user = await User.findOne({ email, isAdmin: true }).select('+password');
+    const user = await User.findOne({ email }).select('+password');
     
-    // Check if user exists, is admin, and password is correct
+    // Check if user exists
     if (!user) {
-      console.log('❌ Admin login failed: User not found or not admin -', email);
+      console.log('❌ Admin login failed: User not found -', email);
+      throw new AppError('Invalid admin credentials', 401);
+    }
+    
+    // Ensure admin flag is boolean
+    const isAdminFlag = normalizeBoolean(user.isAdmin);
+    
+    // Check if user is admin
+    if (!isAdminFlag) {
+      console.log('❌ Admin login failed: User is not an admin -', email);
       throw new AppError('Invalid admin credentials', 401);
     }
     
@@ -221,6 +272,9 @@ exports.adminLogin = async (req, res, next) => {
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
     
+    // Also normalize cloud access flag
+    const isCloudFlag = normalizeBoolean(user.isCloud);
+    
     // Generate token
     const token = generateToken(user._id);
     
@@ -233,7 +287,8 @@ exports.adminLogin = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
-      isAdmin: user.isAdmin,
+      isAdmin: isAdminFlag,
+      isCloud: isCloudFlag,
       registrationTime: user.registrationTime,
       lastLogin: user.lastLogin
     };
