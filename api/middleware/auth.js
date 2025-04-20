@@ -32,7 +32,8 @@ exports.protect = async (req, res, next) => {
     // Grant access to protected route
     req.user = {
       id: user._id,
-      isAdmin: user.isAdmin
+      isAdmin: user.isAdmin,
+      isCloud: user.isCloud
     };
     
     next();
@@ -63,6 +64,15 @@ exports.restrictTo = (...roles) => {
 exports.restrictToAdmin = (req, res, next) => {
   if (!req.user.isAdmin) {
     return next(new AppError('This route is restricted to administrators', 403));
+  }
+  
+  next();
+};
+
+// Create cloud middleware - restrict to cloud users only
+exports.restrictToCloud = (req, res, next) => {
+  if (!req.user.isCloud) {
+    return next(new AppError('This route is restricted to cloud users', 403));
   }
   
   next();

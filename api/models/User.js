@@ -40,6 +40,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isCloud: {
+    type: Boolean,
+    default: false
+  },
   registrationTime: {
     type: Date,
     default: Date.now
