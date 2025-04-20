@@ -5,7 +5,7 @@ const { AppError } = require('../../utils/errorHandler');
 
 // Environment variables
 const JWT_SECRET = process.env.JWT_SECRET || '9ffbc51e975aa664c84b7f583d9d3fe7863257f331814869a4ac867f520177e3617b50ffa7953640d383020440de5e22d0a7b3f08bebde1e3ca1fea7c7ceba15';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2h';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 
 // Helper function to ensure boolean values
 const normalizeBoolean = (value) => {
