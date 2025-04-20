@@ -14,13 +14,14 @@ const userRoutes = require('./api/routes/users');
 const challengeRoutes = require('./api/routes/challenges');
 const progressRoutes = require('./api/routes/progress');
 const settingsRoutes = require('./api/routes/settings');
-const cloudReportRoutes = require('./api/routes/cloud-report'); // Add cloud report routes
+const cloudReportRoutes = require('./api/routes/cloud-report');
+const chatRoutes = require('./api/routes/chat');
 
 // Create Express app
 const app = express();
 
 // CORS Configuration - Allow both localhost and production URLs
-const allowedOrigins = ['http://localhost:3000', 'https://bizclient12.vercel.app'];
+const allowedOrigins = ['http://localhost:3000', 'https://biztrastech.vercel.app'];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -76,7 +77,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/challenges', challengeRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/cloud-report', cloudReportRoutes); // Add cloud report routes
+app.use('/api/cloud-report', cloudReportRoutes); 
+app.use('/api/chat', chatRoutes);
 
 // Routes without /api prefix (for compatibility)
 app.use('/auth', authRoutes);
@@ -84,7 +86,8 @@ app.use('/users', userRoutes);
 app.use('/challenges', challengeRoutes);
 app.use('/progress', progressRoutes);
 app.use('/settings', settingsRoutes);
-app.use('/cloud-report', cloudReportRoutes); // Add cloud report routes
+app.use('/cloud-report', cloudReportRoutes);
+app.use('/chat', chatRoutes); 
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
