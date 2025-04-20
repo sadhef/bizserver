@@ -3,7 +3,7 @@ const User = require('../models/User');
 const { AppError } = require('../../utils/errorHandler');
 
 // Environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET || '9ffbc51e975aa664c84b7f583d9d3fe7863257f331814869a4ac867f520177e3617b50ffa7953640d383020440de5e22d0a7b3f08bebde1e3ca1fea7c7ceba15';
 
 // Protect routes - verify JWT token
 exports.protect = async (req, res, next) => {
