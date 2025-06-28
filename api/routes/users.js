@@ -21,7 +21,10 @@ router.route('/:id')
   .patch(userController.updateUser)
   .delete(userController.deleteUser);
 
-// Create admin user (super admin only)
+// Update user roles specifically (admin only)
+router.patch('/:id/roles', userController.updateUserRoles);
+
+// Create admin user (admin only)
 router.post('/admin', userController.createAdminUser);
 
 module.exports = router;
