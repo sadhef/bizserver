@@ -4,12 +4,64 @@ const Challenge = require('../models/Challenge');
 const Setting = require('../models/Setting');
 const { AppError } = require('../../utils/errorHandler');
 
-// Get all progress (admin only)
+/**
+ * Get progress for the current user
+ * @route GET /api/progress/my-progress
+ * @access Private (User)
+ */
+exports.getMyProgress = async (req, res, next) => {
+  try {
+    const progress = await Progress.findOne({ userId: req.user.id });
+    
+    if (!progress) {
+      throw new AppError('Progress not found for this user', 404);
+    }
+    
+    // Calculate current time remaining
+    const now = new Date();
+    const startTime = new Date(progress.startTime);
+    const totalTimeLimit = progress.totalTimeLimit || 3600; // Default to 1 hour if not set
+    const elapsedSeconds = Math.floor((now - startTime) / 1000);
+    const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
+    
+    // Update time remaining
+    progress.timeRemaining = timeRemaining;
+    await progress.save();
+    
+    // Get completed levels
+    const completedLevels = progress.getCompletedLevels();
+    
+    // Get total available levels
+    const totalLevels = await Challenge.getNumberOfLevels();
+    
+    const progressData = {
+      currentLevel: progress.currentLevel,
+      timeRemaining,
+      totalTimeLimit: progress.totalTimeLimit,
+      completedLevels,
+      totalLevels,
+      completed: progress.completed,
+      startTime: progress.startTime,
+      lastUpdated: progress.lastUpdated
+    };
+    
+    res.status(200).json({
+      status: 'success',
+      progress: progressData
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get all user progress (admin only)
+ * @route GET /api/progress
+ * @access Private (Admin)
+ */
 exports.getAllProgress = async (req, res, next) => {
   try {
-    const progress = await Progress.find()
-      .populate('userId', 'name email institution')
-      .sort({ createdAt: -1 });
+    const progress = await Progress.find().sort({ lastUpdated: -1 });
     
     res.status(200).json({
       status: 'success',
@@ -21,69 +73,63 @@ exports.getAllProgress = async (req, res, next) => {
   }
 };
 
-// Get current user's progress
-exports.getMyProgress = async (req, res, next) => {
-  try {
-    const progress = await Progress.findOne({ userId: req.user.id });
-    
-    if (!progress) {
-      throw new AppError('Progress not found', 404);
-    }
-    
-    // Calculate remaining time
-    const now = new Date();
-    const startTime = new Date(progress.startTime);
-    const totalTimeLimit = progress.totalTimeLimit || 3600;
-    const elapsedSeconds = Math.floor((now - startTime) / 1000);
-    const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
-    
-    // Update time remaining
-    progress.timeRemaining = timeRemaining;
-    await progress.save();
-    
-    res.status(200).json({
-      status: 'success',
-      progress
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Get progress statistics (admin only)
+/**
+ * Get progress statistics (admin only)
+ * @route GET /api/progress/stats
+ * @access Private (Admin)
+ */
 exports.getProgressStats = async (req, res, next) => {
   try {
+    // Get total users
     const totalUsers = await User.countDocuments();
+    
+    // Get total challenges
     const totalChallenges = await Challenge.countDocuments({ enabled: true });
     
-    const allProgress = await Progress.find();
+    // Get users who completed all challenges
+    const completedUsers = await Progress.countDocuments({ completed: true });
     
-    const completedUsers = allProgress.filter(p => p.completed).length;
-    const activeUsers = allProgress.filter(p => !p.completed && p.timeRemaining > 0).length;
-    const expiredUsers = allProgress.filter(p => !p.completed && p.timeRemaining <= 0).length;
+    // Get users who are still in progress
+    const activeUsers = await Progress.countDocuments({
+      completed: false,
+      timeRemaining: { $gt: 0 }
+    });
     
-    // Calculate average completion time
-    const completedProgress = allProgress.filter(p => p.completed && p.completedAt);
-    const avgCompletionTime = completedProgress.length > 0 
-      ? completedProgress.reduce((sum, p) => {
-          const completionTime = new Date(p.completedAt) - new Date(p.startTime);
-          return sum + completionTime;
-        }, 0) / completedProgress.length
-      : 0;
+    // Get users whose time expired
+    const expiredUsers = await Progress.countDocuments({
+      completed: false,
+      timeRemaining: 0
+    });
     
-    // Level completion stats
+    // Get level completion stats
+    const levelStats = await Progress.aggregate([
+      { $unwind: '$levelStatus' },
+      { $match: { 'levelStatus.v': true } },
+      { $group: { _id: '$levelStatus.k', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+    
+    // Format level stats
     const levelCompletion = {};
-    for (let i = 1; i <= totalChallenges; i++) {
-      const levelCompleted = allProgress.filter(p => 
-        p.levelStatus && p.levelStatus.get(i.toString()) === true
-      ).length;
-      levelCompletion[i] = {
-        completed: levelCompleted,
-        percentage: totalUsers > 0 ? (levelCompleted / totalUsers) * 100 : 0
-      };
+    levelStats.forEach(stat => {
+      levelCompletion[stat._id] = stat.count;
+    });
+    
+    // Get average completion time
+    const completedProgress = await Progress.find({ completed: true });
+    let avgCompletionTime = 0;
+    
+    if (completedProgress.length > 0) {
+      const totalTime = completedProgress.reduce((sum, p) => {
+        const startTime = new Date(p.startTime);
+        const endTime = new Date(p.completedAt || p.lastUpdated);
+        return sum + (endTime - startTime) / 1000;
+      }, 0);
+      
+      avgCompletionTime = Math.round(totalTime / completedProgress.length);
     }
     
-    // Get default time limit from settings
+    // Get current default time limit setting
     const settings = await Setting.findOne();
     const defaultTimeLimit = settings ? settings.defaultTimeLimit : 3600;
     
@@ -106,7 +152,11 @@ exports.getProgressStats = async (req, res, next) => {
   }
 };
 
-// Get progress for a specific user (admin only)
+/**
+ * Get progress for a specific user (admin only)
+ * @route GET /api/progress/:userId
+ * @access Private (Admin)
+ */
 exports.getUserProgress = async (req, res, next) => {
   try {
     const progress = await Progress.findOne({ userId: req.params.userId });
@@ -159,7 +209,11 @@ exports.getUserProgress = async (req, res, next) => {
   }
 };
 
-// Update progress for a user (admin only)
+/**
+ * Update progress for a user (admin only)
+ * @route PATCH /api/progress/:userId
+ * @access Private (Admin)
+ */
 exports.updateUserProgress = async (req, res, next) => {
   try {
     const {
@@ -176,41 +230,60 @@ exports.updateUserProgress = async (req, res, next) => {
       const settings = await Setting.findOne();
       const defaultTimeLimit = settings ? settings.defaultTimeLimit : 3600;
       
-      const resetData = {
-        currentLevel: 1,
-        completed: false,
-        timeRemaining: defaultTimeLimit,
-        totalTimeLimit: defaultTimeLimit,
-        startTime: new Date(),
-        completedAt: null,
-        levelStatus: new Map(),
-        flagsAttempted: new Map(),
-        attemptCounts: new Map(),
-        hintsUsed: new Map()
-      };
-      
-      const progress = await Progress.findOneAndUpdate(
+      await Progress.findOneAndUpdate(
         { userId: req.params.userId },
-        resetData,
+        {
+          currentLevel: 1,
+          totalTimeLimit: defaultTimeLimit,
+          timeRemaining: defaultTimeLimit,
+          levelStatus: new Map(),
+          flagsAttempted: new Map(),
+          attemptCounts: new Map(),
+          hintsUsed: new Map(),
+          completed: false,
+          completedAt: null,
+          startTime: new Date(),
+          lastUpdated: new Date()
+        },
         { new: true, runValidators: true }
       );
       
-      if (!progress) {
-        throw new AppError('Progress not found', 404);
-      }
-      
       return res.status(200).json({
         status: 'success',
-        message: 'Progress reset successfully',
-        progress
+        message: 'User progress has been reset'
       });
     }
     
-    // Regular progress update
+    // Update specific fields
     const updateData = {};
-    if (currentLevel !== undefined) updateData.currentLevel = currentLevel;
-    if (timeRemaining !== undefined) updateData.timeRemaining = timeRemaining;
-    if (totalTimeLimit !== undefined) updateData.totalTimeLimit = totalTimeLimit;
+    
+    if (currentLevel !== undefined) {
+      updateData.currentLevel = currentLevel;
+    }
+    
+    if (timeRemaining !== undefined) {
+      updateData.timeRemaining = timeRemaining;
+    }
+    
+    if (totalTimeLimit !== undefined) {
+      updateData.totalTimeLimit = totalTimeLimit;
+      
+      // If time limit is being updated, also update remaining time proportionally
+      if (timeRemaining === undefined) {
+        const progress = await Progress.findOne({ userId: req.params.userId });
+        if (progress) {
+          // Calculate new remaining time proportionally if user already started
+          const oldTimeLimit = progress.totalTimeLimit || 3600;
+          const oldTimeRemaining = progress.timeRemaining || 0;
+          const ratio = oldTimeRemaining / oldTimeLimit;
+          
+          updateData.timeRemaining = Math.round(totalTimeLimit * ratio);
+        } else {
+          updateData.timeRemaining = totalTimeLimit;
+        }
+      }
+    }
+    
     if (completed !== undefined) {
       updateData.completed = completed;
       if (completed) {
@@ -219,6 +292,8 @@ exports.updateUserProgress = async (req, res, next) => {
         updateData.completedAt = null;
       }
     }
+    
+    updateData.lastUpdated = new Date();
     
     const progress = await Progress.findOneAndUpdate(
       { userId: req.params.userId },
@@ -239,7 +314,11 @@ exports.updateUserProgress = async (req, res, next) => {
   }
 };
 
-// Delete user progress (admin only)
+/**
+ * Delete progress for a user (admin only)
+ * @route DELETE /api/progress/:userId
+ * @access Private (Admin)
+ */
 exports.deleteUserProgress = async (req, res, next) => {
   try {
     const progress = await Progress.findOneAndDelete({ userId: req.params.userId });
