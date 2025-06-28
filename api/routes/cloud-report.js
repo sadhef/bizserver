@@ -15,7 +15,6 @@ router.get('/data', protect, restrictToCloud, async (req, res, next) => {
       data: {
         reportTitle: report.reportTitle,
         reportDates: report.reportDates,
-        totalSpaceUsed: report.totalSpaceUsed, // Added total space used
         columns: report.columns,
         rows: report.rows,
         updatedAt: report.updatedAt
@@ -34,8 +33,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
       columns, 
       rows, 
       reportTitle, 
-      reportDates, 
-      totalSpaceUsed // New field
+      reportDates
     } = req.body;
     
     // Validate the data
@@ -51,14 +49,13 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
     let report = await CloudReport.getLatestReport(req.user.id);
     
     // Update the report data
-    report.reportTitle = reportTitle || 'Cloud Status Report';
+    report.reportTitle = reportTitle || 'Cloud Server Status Report';
     report.reportDates = reportDates || {
       startDate: new Date(),
       endDate: new Date()
     };
     report.columns = columns;
     report.rows = rows;
-    report.totalSpaceUsed = totalSpaceUsed || ''; // Add total space used
     report.updatedBy = req.user.id;
     
     // Save the updated report
@@ -74,7 +71,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
   }
 });
 
-// Existing other routes remain the same
+// Get cloud report history
 router.get('/history', protect, restrictToCloud, async (req, res, next) => {
   try {
     const reports = await CloudReport.find()
@@ -90,11 +87,12 @@ router.get('/history', protect, restrictToCloud, async (req, res, next) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching report history:', error);
-    return next(new AppError('Failed to fetch report history', 500));
+    console.error('Error fetching cloud report history:', error);
+    return next(new AppError('Failed to fetch cloud report history', 500));
   }
 });
 
+// Create new cloud report
 router.post('/new', protect, restrictToCloud, async (req, res, next) => {
   try {
     const newReport = await CloudReport.create({
@@ -109,8 +107,27 @@ router.post('/new', protect, restrictToCloud, async (req, res, next) => {
       }
     });
   } catch (error) {
-    console.error('Error creating new report:', error);
-    return next(new AppError('Failed to create new report', 500));
+    console.error('Error creating new cloud report:', error);
+    return next(new AppError('Failed to create new cloud report', 500));
+  }
+});
+
+// Delete cloud report
+router.delete('/:id', protect, restrictToCloud, async (req, res, next) => {
+  try {
+    const report = await CloudReport.findByIdAndDelete(req.params.id);
+    
+    if (!report) {
+      return next(new AppError('Cloud report not found', 404));
+    }
+    
+    res.status(204).json({
+      status: 'success',
+      data: null
+    });
+  } catch (error) {
+    console.error('Error deleting cloud report:', error);
+    return next(new AppError('Failed to delete cloud report', 500));
   }
 });
 

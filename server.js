@@ -17,7 +17,6 @@ const settingsRoutes = require('./api/routes/settings');
 const cloudReportRoutes = require('./api/routes/cloud-report');
 const backupServerRoutes = require('./api/routes/backup-server'); // New backup server routes
 const chatRoutes = require('./api/routes/chat');
-const adminRoutes = require('./api/routes/admin'); // New admin routes
 
 // Create Express app
 const app = express();
@@ -82,7 +81,6 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/cloud-report', cloudReportRoutes); 
 app.use('/api/backup-server', backupServerRoutes); // New backup server routes
 app.use('/api/chat', chatRoutes);
-app.use('/api/admin', adminRoutes); // New admin routes
 
 // Routes without /api prefix (for compatibility)
 app.use('/auth', authRoutes);
@@ -93,7 +91,6 @@ app.use('/settings', settingsRoutes);
 app.use('/cloud-report', cloudReportRoutes);
 app.use('/backup-server', backupServerRoutes); // New backup server routes
 app.use('/chat', chatRoutes); 
-app.use('/admin', adminRoutes); // New admin routes without /api prefix
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
