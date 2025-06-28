@@ -1,6 +1,5 @@
 const Challenge = require('../models/Challenge');
 const Progress = require('../models/Progress');
-const Setting = require('../models/Setting');
 const { AppError } = require('../../utils/errorHandler');
 
 // Get all challenges (admin only)
@@ -18,30 +17,15 @@ exports.getAllChallenges = async (req, res, next) => {
   }
 };
 
-// Get enabled challenges (admin only)
-exports.getEnabledChallenges = async (req, res, next) => {
-  try {
-    const challenges = await Challenge.getEnabledChallenges();
-    
-    res.status(200).json({
-      status: 'success',
-      results: challenges.length,
-      challenges
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Create new challenge (admin only)
+// Create a new challenge (admin only)
 exports.createChallenge = async (req, res, next) => {
   try {
     const { levelNumber, title, description, hint, flag, enabled } = req.body;
     
-    // Check if level already exists
-    const existingLevel = await Challenge.findOne({ levelNumber });
-    if (existingLevel) {
-      throw new AppError(`Challenge with level number ${levelNumber} already exists`, 400);
+    // Check if level number already exists
+    const existingChallenge = await Challenge.findOne({ levelNumber });
+    if (existingChallenge) {
+      throw new AppError('A challenge with this level number already exists', 400);
     }
     
     const challenge = await Challenge.create({
@@ -62,44 +46,25 @@ exports.createChallenge = async (req, res, next) => {
   }
 };
 
-// Get a specific challenge (admin only)
-exports.getChallenge = async (req, res, next) => {
-  try {
-    const challenge = await Challenge.findById(req.params.id);
-    
-    if (!challenge) {
-      throw new AppError('Challenge not found', 404);
-    }
-    
-    res.status(200).json({
-      status: 'success',
-      challenge
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // Update a challenge (admin only)
 exports.updateChallenge = async (req, res, next) => {
   try {
     const { levelNumber, title, description, hint, flag, enabled } = req.body;
     
-    // If level number is changing, check for conflicts
+    // If updating level number, check if it already exists (excluding current challenge)
     if (levelNumber) {
-      const existingLevel = await Challenge.findOne({ 
+      const existingChallenge = await Challenge.findOne({ 
         levelNumber, 
         _id: { $ne: req.params.id } 
       });
-      
-      if (existingLevel) {
-        throw new AppError(`Challenge with level number ${levelNumber} already exists`, 400);
+      if (existingChallenge) {
+        throw new AppError('A challenge with this level number already exists', 400);
       }
     }
     
     const challenge = await Challenge.findByIdAndUpdate(
       req.params.id,
-      { 
+      {
         levelNumber,
         title,
         description,
@@ -188,7 +153,7 @@ exports.getCurrentChallenge = async (req, res, next) => {
     // Calculate remaining time
     const now = new Date();
     const startTime = new Date(progress.startTime);
-    const totalTimeLimit = progress.totalTimeLimit || 3600; // Use custom time limit or fall back to 1 hour
+    const totalTimeLimit = progress.totalTimeLimit || 3600;
     const elapsedSeconds = Math.floor((now - startTime) / 1000);
     const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
     
@@ -209,32 +174,25 @@ exports.getCurrentChallenge = async (req, res, next) => {
       hint: hintUsed ? challenge.hint : null,
       attemptCount,
       hintUsed,
-      timeRemaining,
-      totalTimeLimit
+      timeRemaining
     };
     
     res.status(200).json({
       status: 'success',
-      challenge: challengeData,
-      progress: {
-        currentLevel: progress.currentLevel,
-        completedLevels: progress.getCompletedLevels(),
-        timeRemaining,
-        totalTimeLimit
-      }
+      challenge: challengeData
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Submit flag
+// Submit flag for current challenge
 exports.submitFlag = async (req, res, next) => {
   try {
     const { flag } = req.body;
     
     if (!flag) {
-      throw new AppError('Please provide a flag', 400);
+      throw new AppError('Flag is required', 400);
     }
     
     // Get user's progress
@@ -244,20 +202,14 @@ exports.submitFlag = async (req, res, next) => {
       throw new AppError('User progress not found', 404);
     }
     
-    // Check if completed or time expired
-    if (progress.completed || progress.timeRemaining <= 0) {
-      return res.status(400).json({
-        status: 'fail',
-        message: progress.completed ? 'All challenges completed' : 'Time expired'
-      });
+    // Check if time expired
+    if (progress.timeRemaining <= 0) {
+      throw new AppError('Time has expired', 400);
     }
     
-    // Get current level
-    const currentLevel = progress.currentLevel;
-    
-    // Get the challenge
+    // Get current challenge
     const challenge = await Challenge.findOne({ 
-      levelNumber: currentLevel,
+      levelNumber: progress.currentLevel,
       enabled: true
     });
     
@@ -265,46 +217,67 @@ exports.submitFlag = async (req, res, next) => {
       throw new AppError('Challenge not found', 404);
     }
     
-    // Record the attempt
-    await progress.addFlagAttempt(currentLevel, flag);
+    const currentLevel = progress.currentLevel.toString();
     
-    // Check if flag is correct (case insensitive)
-    const isCorrect = flag.toLowerCase() === challenge.flag.toLowerCase();
+    // Record the flag attempt
+    if (!progress.flagsAttempted.has(currentLevel)) {
+      progress.flagsAttempted.set(currentLevel, []);
+    }
+    progress.flagsAttempted.get(currentLevel).push({
+      flag,
+      timestamp: new Date(),
+      correct: flag.trim() === challenge.flag.trim()
+    });
     
-    if (isCorrect) {
+    // Update attempt count
+    const currentAttempts = progress.attemptCounts.get(currentLevel) || 0;
+    progress.attemptCounts.set(currentLevel, currentAttempts + 1);
+    
+    // Check if flag is correct
+    if (flag.trim() === challenge.flag.trim()) {
       // Mark level as completed
-      await progress.completeLevel(currentLevel);
+      progress.levelStatus.set(currentLevel, true);
       
-      // Get number of enabled levels
-      const totalLevels = await Challenge.getNumberOfLevels();
+      // Check if this is the last level
+      const totalChallenges = await Challenge.countDocuments({ enabled: true });
       
-      // Check if this was the last level
-      const isLastLevel = currentLevel >= totalLevels;
-      
-      if (isLastLevel) {
-        // Mark as completed
+      if (progress.currentLevel >= totalChallenges) {
+        // All challenges completed
         progress.completed = true;
         progress.completedAt = new Date();
+        
+        await progress.save();
+        
+        return res.status(200).json({
+          status: 'success',
+          message: 'Congratulations! All challenges completed!',
+          correct: true,
+          completed: true,
+          timeRemaining: progress.timeRemaining
+        });
       } else {
         // Move to next level
-        progress.currentLevel = currentLevel + 1;
+        progress.currentLevel += 1;
+        await progress.save();
+        
+        return res.status(200).json({
+          status: 'success',
+          message: 'Correct! Moving to next level.',
+          correct: true,
+          nextLevel: progress.currentLevel,
+          timeRemaining: progress.timeRemaining
+        });
       }
-      
-      await progress.save();
-      
-      res.status(200).json({
-        status: 'success',
-        correct: true,
-        message: isLastLevel ? 'Congratulations! You have completed all challenges!' : 'Correct flag! Moving to next level.',
-        completed: isLastLevel,
-        nextLevel: isLastLevel ? null : currentLevel + 1
-      });
     } else {
       // Wrong flag
-      res.status(200).json({
+      await progress.save();
+      
+      return res.status(200).json({
         status: 'success',
+        message: 'Incorrect flag. Try again!',
         correct: false,
-        message: 'Incorrect flag. Try again!'
+        attempts: progress.attemptCounts.get(currentLevel),
+        timeRemaining: progress.timeRemaining
       });
     }
   } catch (error) {
@@ -312,8 +285,8 @@ exports.submitFlag = async (req, res, next) => {
   }
 };
 
-// Request hint
-exports.requestHint = async (req, res, next) => {
+// Get hint for current challenge
+exports.getHint = async (req, res, next) => {
   try {
     // Get user's progress
     const progress = await Progress.findOne({ userId: req.user.id });
@@ -322,26 +295,14 @@ exports.requestHint = async (req, res, next) => {
       throw new AppError('User progress not found', 404);
     }
     
-    // Check if completed or time expired
-    if (progress.completed || progress.timeRemaining <= 0) {
-      return res.status(400).json({
-        status: 'fail',
-        message: progress.completed ? 'All challenges completed' : 'Time expired'
-      });
+    // Check if time expired
+    if (progress.timeRemaining <= 0) {
+      throw new AppError('Time has expired', 400);
     }
     
-    // Get current level
-    const currentLevel = progress.currentLevel;
-    const levelStr = currentLevel.toString();
-    
-    // Check if hint already used
-    if (progress.hintsUsed.get(levelStr)) {
-      throw new AppError('Hint already used for this level', 400);
-    }
-    
-    // Get the challenge
+    // Get current challenge
     const challenge = await Challenge.findOne({ 
-      levelNumber: currentLevel,
+      levelNumber: progress.currentLevel,
       enabled: true
     });
     
@@ -349,12 +310,16 @@ exports.requestHint = async (req, res, next) => {
       throw new AppError('Challenge not found', 404);
     }
     
+    const currentLevel = progress.currentLevel.toString();
+    
     // Mark hint as used
-    await progress.useHint(currentLevel);
+    progress.hintsUsed.set(currentLevel, true);
+    await progress.save();
     
     res.status(200).json({
       status: 'success',
-      hint: challenge.hint
+      hint: challenge.hint,
+      timeRemaining: progress.timeRemaining
     });
   } catch (error) {
     next(error);

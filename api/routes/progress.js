@@ -2,19 +2,23 @@ const express = require('express');
 const router = express.Router();
 const progressController = require('../controllers/progressController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
-const { validateMongoId } = require('../middleware/validate');
 
-// Get my progress (user route)
-router.get('/my-progress', protect, progressController.getMyProgress);
-
-// Admin routes (protected + admin only)
+// Get all progress (admin only)
 router.get('/', protect, restrictToAdmin, progressController.getAllProgress);
-router.get('/stats', protect, restrictToAdmin, progressController.getProgressStats);
 
-// User progress management (admin only)
-router.route('/:userId')
-  .get(protect, restrictToAdmin, validateMongoId, progressController.getUserProgress)
-  .patch(protect, restrictToAdmin, validateMongoId, progressController.updateUserProgress)
-  .delete(protect, restrictToAdmin, validateMongoId, progressController.deleteUserProgress);
+// Get current user's progress
+router.get('/me', protect, progressController.getMyProgress);
+
+// Get specific user's progress (admin only)
+router.get('/:userId', protect, restrictToAdmin, progressController.getUserProgress);
+
+// Update user progress (admin only)
+router.patch('/:userId', protect, restrictToAdmin, progressController.updateUserProgress);
+
+// Delete user progress (admin only)
+router.delete('/:userId', protect, restrictToAdmin, progressController.deleteUserProgress);
+
+// Get progress statistics (admin only)
+router.get('/stats/overview', protect, restrictToAdmin, progressController.getProgressStats);
 
 module.exports = router;

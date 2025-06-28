@@ -3,25 +3,31 @@ const mongoose = require('mongoose');
 const challengeSchema = new mongoose.Schema({
   levelNumber: {
     type: Number,
-    required: true,
-    min: 1
+    required: [true, 'Level number is required'],
+    unique: true,
+    min: [1, 'Level number must be at least 1']
   },
   title: {
     type: String,
-    required: true,
-    trim: true
+    required: [true, 'Challenge title is required'],
+    trim: true,
+    maxlength: [200, 'Title cannot exceed 200 characters']
   },
   description: {
     type: String,
-    required: true
+    required: [true, 'Challenge description is required'],
+    maxlength: [5000, 'Description cannot exceed 5000 characters']
   },
   hint: {
     type: String,
-    required: true
+    required: [true, 'Challenge hint is required'],
+    maxlength: [1000, 'Hint cannot exceed 1000 characters']
   },
   flag: {
     type: String,
-    required: true
+    required: [true, 'Challenge flag is required'],
+    trim: true,
+    maxlength: [100, 'Flag cannot exceed 100 characters']
   },
   enabled: {
     type: Boolean,
@@ -37,27 +43,10 @@ const challengeSchema = new mongoose.Schema({
   }
 });
 
-// Index for quick access by level number
-challengeSchema.index({ levelNumber: 1 });
-
-// Update the updatedAt timestamp before save
+// Update the updatedAt field before saving
 challengeSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
-
-// Static method to get all enabled challenges
-challengeSchema.statics.getEnabledChallenges = async function() {
-  return this.find({ enabled: true }).sort({ levelNumber: 1 });
-};
-
-// Static method to get number of enabled levels
-challengeSchema.statics.getNumberOfLevels = async function() {
-  const result = await this.aggregate([
-    { $match: { enabled: true } },
-    { $group: { _id: null, count: { $sum: 1 } } }
-  ]);
-  return result.length > 0 ? result[0].count : 0;
-};
 
 module.exports = mongoose.model('Challenge', challengeSchema);

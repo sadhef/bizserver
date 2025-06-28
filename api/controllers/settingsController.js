@@ -1,22 +1,19 @@
 const Setting = require('../models/Setting');
 const { AppError } = require('../../utils/errorHandler');
 
-/**
- * Get global settings
- * @route GET /api/settings
- * @access Private
- */
+// Get system settings (admin only)
 exports.getSettings = async (req, res, next) => {
   try {
-    // Get settings from database
     let settings = await Setting.findOne();
     
-    // If no settings exist, create default settings
+    // Create default settings if none exist
     if (!settings) {
       settings = await Setting.create({
-        defaultTimeLimit: 3600, // Default 1 hour in seconds
-        createdBy: req.user.id,
-        updatedBy: req.user.id
+        defaultTimeLimit: 3600, // 1 hour
+        maxAttempts: 0, // unlimited
+        hintPenalty: 0, // no penalty
+        systemName: 'BizTras Challenge System',
+        maintenanceMode: false
       });
     }
     
@@ -29,74 +26,79 @@ exports.getSettings = async (req, res, next) => {
   }
 };
 
-/**
- * Update global settings
- * @route POST /api/settings/update
- * @access Private (Admin)
- */
+// Update system settings (admin only)
 exports.updateSettings = async (req, res, next) => {
   try {
-    let { defaultTimeLimit } = req.body;
+    const {
+      defaultTimeLimit,
+      maxAttempts,
+      hintPenalty,
+      systemName,
+      maintenanceMode
+    } = req.body;
     
-    console.log('Request body:', req.body);
-    console.log('defaultTimeLimit as received:', defaultTimeLimit, typeof defaultTimeLimit);
-    
-    // Ensure defaultTimeLimit is a number
+    // Validate defaultTimeLimit
     if (defaultTimeLimit !== undefined) {
-      // Convert to number if it's a string
-      if (typeof defaultTimeLimit === 'string') {
-        defaultTimeLimit = parseInt(defaultTimeLimit, 10);
-      }
-      
-      // Check if it's a valid number after conversion
-      if (isNaN(defaultTimeLimit)) {
-        console.log('Invalid time limit value:', defaultTimeLimit);
-        throw new AppError('Time limit must be a valid number', 400);
-      }
-      
-      // Validate the range (5 minutes to 24 hours)
-      const fiveMinutes = 5 * 60; // 300 seconds
-      const twentyFourHours = 24 * 60 * 60; // 86400 seconds
-      
-      console.log('Validating time limit:', defaultTimeLimit, 
-                  'Min:', fiveMinutes, 'Max:', twentyFourHours);
-      
-      if (defaultTimeLimit < fiveMinutes) {
-        throw new AppError('Time limit must be at least 5 minutes (300 seconds)', 400);
-      }
-      
-      if (defaultTimeLimit > twentyFourHours) {
-        throw new AppError('Time limit cannot exceed 24 hours (86400 seconds)', 400);
+      if (defaultTimeLimit < 300 || defaultTimeLimit > 86400) {
+        throw new AppError('Default time limit must be between 5 minutes (300 seconds) and 24 hours (86400 seconds)', 400);
       }
     }
     
-    // Get existing settings or create new ones
     let settings = await Setting.findOne();
     
     if (!settings) {
-      console.log('Creating new settings with defaultTimeLimit:', defaultTimeLimit);
+      // Create new settings
       settings = await Setting.create({
         defaultTimeLimit: defaultTimeLimit || 3600,
-        createdBy: req.user.id,
-        updatedBy: req.user.id
+        maxAttempts: maxAttempts || 0,
+        hintPenalty: hintPenalty || 0,
+        systemName: systemName || 'BizTras Challenge System',
+        maintenanceMode: maintenanceMode || false
       });
     } else {
-      // Update settings
-      console.log('Updating existing settings with defaultTimeLimit:', defaultTimeLimit);
-      settings.defaultTimeLimit = defaultTimeLimit || settings.defaultTimeLimit;
-      settings.updatedBy = req.user.id;
-      settings.updatedAt = Date.now();
-      await settings.save();
+      // Update existing settings
+      if (defaultTimeLimit !== undefined) settings.defaultTimeLimit = defaultTimeLimit;
+      if (maxAttempts !== undefined) settings.maxAttempts = maxAttempts;
+      if (hintPenalty !== undefined) settings.hintPenalty = hintPenalty;
+      if (systemName !== undefined) settings.systemName = systemName;
+      if (maintenanceMode !== undefined) settings.maintenanceMode = maintenanceMode;
       
-      console.log('Settings saved successfully, new value:', settings.defaultTimeLimit);
+      await settings.save();
     }
     
     res.status(200).json({
       status: 'success',
+      message: 'Settings updated successfully',
       settings
     });
   } catch (error) {
-    console.error('Error in updateSettings:', error);
+    next(error);
+  }
+};
+
+// Reset all settings to default (admin only)
+exports.resetSettings = async (req, res, next) => {
+  try {
+    const defaultSettings = {
+      defaultTimeLimit: 3600,
+      maxAttempts: 0,
+      hintPenalty: 0,
+      systemName: 'BizTras Challenge System',
+      maintenanceMode: false
+    };
+    
+    const settings = await Setting.findOneAndUpdate(
+      {},
+      defaultSettings,
+      { new: true, upsert: true }
+    );
+    
+    res.status(200).json({
+      status: 'success',
+      message: 'Settings reset to defaults',
+      settings
+    });
+  } catch (error) {
     next(error);
   }
 };
