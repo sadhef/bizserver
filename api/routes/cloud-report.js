@@ -17,6 +17,7 @@ router.get('/data', protect, restrictToCloud, async (req, res, next) => {
         reportDates: report.reportDates,
         columns: report.columns,
         rows: report.rows,
+        totalSpaceUsed: report.totalSpaceUsed, // FIX: Added totalSpaceUsed field
         updatedAt: report.updatedAt
       }
     });
@@ -33,7 +34,8 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
       columns, 
       rows, 
       reportTitle, 
-      reportDates
+      reportDates,
+      totalSpaceUsed // FIX: Added totalSpaceUsed field
     } = req.body;
     
     // Validate the data
@@ -49,13 +51,14 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
     let report = await CloudReport.getLatestReport(req.user.id);
     
     // Update the report data
-    report.reportTitle = reportTitle || 'Cloud Server Status Report';
+    report.reportTitle = reportTitle || 'Cloud Status Report'; // FIX: Properly handle reportTitle
     report.reportDates = reportDates || {
       startDate: new Date(),
       endDate: new Date()
     };
     report.columns = columns;
     report.rows = rows;
+    report.totalSpaceUsed = totalSpaceUsed || ''; // FIX: Add totalSpaceUsed field
     report.updatedBy = req.user.id;
     
     // Save the updated report

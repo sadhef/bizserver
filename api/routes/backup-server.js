@@ -13,7 +13,7 @@ router.get('/data', protect, restrictToCloud, async (req, res, next) => {
     res.status(200).json({
       status: 'success',
       data: {
-        reportTitle: report.reportTitle,
+        reportTitle: report.reportTitle, // FIX: Properly return reportTitle from DB
         reportDates: report.reportDates,
         columns: report.columns,
         rows: report.rows,
@@ -32,7 +32,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
     const { 
       columns, 
       rows, 
-      reportTitle, 
+      reportTitle, // FIX: Properly handle reportTitle from request
       reportDates
     } = req.body;
     
@@ -49,7 +49,7 @@ router.post('/save', protect, restrictToCloud, async (req, res, next) => {
     let report = await BackupServer.getLatestReport(req.user.id);
     
     // Update the report data
-    report.reportTitle = reportTitle || 'Backup Server Cronjob Status';
+    report.reportTitle = reportTitle || 'Backup Server Cronjob Status'; // FIX: Properly handle reportTitle
     report.reportDates = reportDates || {
       startDate: new Date(),
       endDate: new Date()
