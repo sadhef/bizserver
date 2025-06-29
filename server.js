@@ -17,6 +17,7 @@ const settingsRoutes = require('./api/routes/settings');
 const cloudReportRoutes = require('./api/routes/cloud-report');
 const backupServerRoutes = require('./api/routes/backup-server'); // New backup server routes
 const chatRoutes = require('./api/routes/chat');
+const pushNotificationRoutes = require('./api/routes/pushNotifications');
 
 // Create Express app
 const app = express();
@@ -81,6 +82,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/cloud-report', cloudReportRoutes); 
 app.use('/api/backup-server', backupServerRoutes); // New backup server routes
 app.use('/api/chat', chatRoutes);
+app.use('/api/push-notifications', pushNotificationRoutes);
+
 
 // Routes without /api prefix (for compatibility)
 app.use('/auth', authRoutes);
