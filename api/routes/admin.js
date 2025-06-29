@@ -1,58 +1,36 @@
 const express = require('express');
-const User = require('../models/User');
-const { protect, restrictToAdmin } = require('../middleware/auth');
-const { AppError } = require('../../utils/errorHandler');
-
 const router = express.Router();
+const adminController = require('../controllers/adminController');
+const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Apply authentication and admin restriction to all routes
-router.use(protect);
-router.use(restrictToAdmin);
+// Admin dashboard stats
+router.get('/stats', protect, restrictToAdmin, adminController.getAdminStats);
 
-// GET /api/admin/users - Get all users for admin
-router.get('/users', async (req, res, next) => {
-  try {
-    const users = await User.find({})
-      .select('_id name email isAdmin isCloud createdAt lastLogin')
-      .sort({ createdAt: -1 });
+// User management
+router.get('/users', protect, restrictToAdmin, adminController.getAllUsers);
+router.get('/users/:id', protect, restrictToAdmin, adminController.getUser);
+router.patch('/users/:id', protect, restrictToAdmin, adminController.updateUser);
+router.delete('/users/:id', protect, restrictToAdmin, adminController.deleteUser);
 
-    res.status(200).json({
-      status: 'success',
-      results: users.length,
-      users
-    });
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    next(error);
-  }
-});
+// Challenge management
+router.get('/challenges', protect, restrictToAdmin, adminController.getAllChallenges);
+router.post('/challenges', protect, restrictToAdmin, adminController.createChallenge);
+router.patch('/challenges/:id', protect, restrictToAdmin, adminController.updateChallenge);
+router.delete('/challenges/:id', protect, restrictToAdmin, adminController.deleteChallenge);
 
-// GET /api/admin/stats - Get admin statistics
-router.get('/stats', async (req, res, next) => {
-  try {
-    const totalUsers = await User.countDocuments();
-    const adminUsers = await User.countDocuments({ isAdmin: true });
-    const cloudUsers = await User.countDocuments({ isCloud: true });
-    const regularUsers = await User.countDocuments({ isAdmin: false, isCloud: false });
+// Progress management
+router.get('/progress', protect, restrictToAdmin, adminController.getAllProgress);
+router.patch('/progress/:userId', protect, restrictToAdmin, adminController.updateUserProgress);
+router.delete('/progress/:userId', protect, restrictToAdmin, adminController.deleteUserProgress);
 
-    const recentUsers = await User.countDocuments({
-      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-    });
+// System management
+router.get('/system/info', protect, restrictToAdmin, adminController.getSystemInfo);
+router.post('/system/backup', protect, restrictToAdmin, adminController.createBackup);
+router.post('/system/reset', protect, restrictToAdmin, adminController.resetSystem);
 
-    res.status(200).json({
-      status: 'success',
-      stats: {
-        totalUsers,
-        adminUsers,
-        cloudUsers,
-        regularUsers,
-        recentUsers
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching admin stats:', error);
-    next(error);
-  }
-});
+// Analytics
+router.get('/analytics/users', protect, restrictToAdmin, adminController.getUserAnalytics);
+router.get('/analytics/challenges', protect, restrictToAdmin, adminController.getChallengeAnalytics);
+router.get('/analytics/performance', protect, restrictToAdmin, adminController.getPerformanceAnalytics);
 
 module.exports = router;
