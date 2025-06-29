@@ -15,14 +15,20 @@ class AppError extends Error {
 /**
  * Global error handler middleware
  * @param {Error} err - Error object
+ * @param {Object} req - Express request object
  * @param {Object} res - Express response object
+ * @param {Function} next - Express next function
  */
-const handleError = (err, res) => {
-  console.log('Error handler received:', err.name, err.message);
+const handleError = (err, req, res, next) => {
+  // Ensure we have proper error structure
+  let error = { ...err };
+  error.message = err.message;
+  
+  console.log('Error handler received:', error.name, error.message);
   
   // Handle Mongoose validation errors
-  if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors).map(val => val.message);
+  if (error.name === 'ValidationError') {
+    const messages = Object.values(error.errors).map(val => val.message);
     return res.status(400).json({
       status: 'fail',
       message: 'Validation Error',
@@ -31,8 +37,8 @@ const handleError = (err, res) => {
   }
   
   // Handle MongoDB duplicate key errors
-  if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue)[0];
     return res.status(400).json({
       status: 'fail',
       message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists.`
@@ -40,7 +46,7 @@ const handleError = (err, res) => {
   }
   
   // Handle MongoDB connection errors
-  if (err.name === 'MongoNetworkError' || err.name === 'MongoServerSelectionError') {
+  if (error.name === 'MongoNetworkError' || error.name === 'MongoServerSelectionError') {
     return res.status(500).json({
       status: 'error',
       message: 'Database connection error. Please try again later.'
@@ -48,14 +54,14 @@ const handleError = (err, res) => {
   }
   
   // Handle JWT errors
-  if (err.name === 'JsonWebTokenError') {
+  if (error.name === 'JsonWebTokenError') {
     return res.status(401).json({
       status: 'fail',
       message: 'Invalid token. Please log in again.'
     });
   }
   
-  if (err.name === 'TokenExpiredError') {
+  if (error.name === 'TokenExpiredError') {
     return res.status(401).json({
       status: 'fail',
       message: 'Your token has expired. Please log in again.'
@@ -63,34 +69,37 @@ const handleError = (err, res) => {
   }
   
   // Handle cast errors (e.g., invalid ObjectId)
-  if (err.name === 'CastError') {
+  if (error.name === 'CastError') {
     return res.status(400).json({
       status: 'fail',
-      message: `Invalid ${err.path}: ${err.value}`
+      message: `Invalid ${error.path}: ${error.value}`
     });
   }
   
   // Default handling for operational errors
-  if (err.isOperational) {
-    return res.status(err.statusCode).json({
-      status: err.status,
-      message: err.message
+  if (error.isOperational && error.statusCode) {
+    return res.status(error.statusCode).json({
+      status: error.status,
+      message: error.message
     });
   }
   
   // For unexpected errors
-  console.error('ERROR 💥:', err);
+  console.error('ERROR 💥:', error);
   
-  // Send generic message in production
-  const { statusCode = 500, message } = err;
-  res.status(statusCode).json({
-    status: 'error',
+  // Ensure we have a valid status code
+  const statusCode = error.statusCode || 500;
+  const message = error.message || 'Something went wrong';
+  
+  // Send error response
+  return res.status(statusCode).json({
+    status: statusCode >= 400 && statusCode < 500 ? 'fail' : 'error',
     message: process.env.NODE_ENV === 'production' 
       ? 'Something went wrong. Please try again later.'
       : message,
     ...(process.env.NODE_ENV !== 'production' && { 
-      error: err.toString(),
-      stack: err.stack 
+      error: error.toString(),
+      stack: error.stack 
     })
   });
 };
