@@ -1,9 +1,11 @@
+// api/controllers/notificationController.js
 const admin = require('../config/firebase-admin');
 const NotificationToken = require('../models/NotificationToken');
 const User = require('../models/User');
 const { AppError } = require('../../utils/errorHandler');
 
-exports.saveToken = async (req, res, next) => {
+// Save FCM token
+const saveToken = async (req, res, next) => {
   try {
     const { token, platform = 'web' } = req.body;
     const userId = req.user.id;
@@ -12,24 +14,36 @@ exports.saveToken = async (req, res, next) => {
       throw new AppError('FCM token is required', 400);
     }
 
-    const userAgent = req.headers['user-agent'] || '';
-    const ipAddress = req.ip || req.connection.remoteAddress || '';
-
+    // Validate token with Firebase (dry run)
     try {
       await admin.messaging().send({
         token,
-        notification: { title: 'Test', body: 'Test' }
-      }, true);
+        data: { test: 'validation' }
+      }, true); // dry run
+      console.log('✅ FCM token validated successfully');
     } catch (error) {
       if (error.code === 'messaging/invalid-registration-token') {
         throw new AppError('Invalid FCM token', 400);
       }
+      console.warn('⚠️ Token validation skipped:', error.message);
     }
 
-    await NotificationToken.deactivateUserTokens(userId, platform);
+    // Get user agent and IP for tracking
+    const userAgent = req.headers['user-agent'] || '';
+    const ipAddress = req.ip || req.connection.remoteAddress || '';
 
+    // Deactivate existing tokens for this user/platform
+    await NotificationToken.updateMany(
+      { userId, platform, isActive: true },
+      { 
+        isActive: false,
+        lastUsed: new Date()
+      }
+    );
+
+    // Save new token
     let existingToken = await NotificationToken.findOne({ token });
-
+    
     if (existingToken) {
       existingToken.userId = userId;
       existingToken.platform = platform;
@@ -38,6 +52,7 @@ exports.saveToken = async (req, res, next) => {
       existingToken.userAgent = userAgent;
       existingToken.ipAddress = ipAddress;
       await existingToken.save();
+      console.log('🔄 Updated existing token for user:', userId);
     } else {
       await NotificationToken.create({
         userId,
@@ -45,20 +60,25 @@ exports.saveToken = async (req, res, next) => {
         platform,
         isActive: true,
         userAgent,
-        ipAddress
+        ipAddress,
+        lastUsed: new Date()
       });
+      console.log('💾 Created new token for user:', userId);
     }
 
     res.status(200).json({
       status: 'success',
       message: 'Token saved successfully'
     });
+
   } catch (error) {
+    console.error('❌ Error saving token:', error);
     next(error);
   }
 };
 
-exports.removeToken = async (req, res, next) => {
+// Remove FCM token
+const removeToken = async (req, res, next) => {
   try {
     const { token } = req.body;
     const userId = req.user.id;
@@ -67,21 +87,31 @@ exports.removeToken = async (req, res, next) => {
       throw new AppError('FCM token is required', 400);
     }
 
-    await NotificationToken.findOneAndUpdate(
+    const result = await NotificationToken.findOneAndUpdate(
       { token, userId },
-      { isActive: false }
+      { 
+        isActive: false,
+        lastUsed: new Date()
+      }
     );
+
+    if (result) {
+      console.log('🗑️ Token deactivated for user:', userId);
+    }
 
     res.status(200).json({
       status: 'success',
       message: 'Token removed successfully'
     });
+
   } catch (error) {
+    console.error('❌ Error removing token:', error);
     next(error);
   }
 };
 
-exports.sendNotification = async (req, res, next) => {
+// Send notification
+const sendNotification = async (req, res, next) => {
   try {
     const { 
       title, 
@@ -91,9 +121,7 @@ exports.sendNotification = async (req, res, next) => {
       role,
       imageUrl,
       actionUrl,
-      priority = 'normal',
-      ttl = 86400,
-      silent = false
+      priority = 'normal'
     } = req.body;
 
     if (!title || !body) {
@@ -103,12 +131,13 @@ exports.sendNotification = async (req, res, next) => {
     let tokens = [];
     let targetUserCount = 0;
 
+    // Get tokens based on target type
     switch (targetType) {
       case 'all':
-        const allTokens = await NotificationToken.find({ isActive: true })
-          .populate('userId', 'name email');
+        const allTokens = await NotificationToken.find({ isActive: true });
         tokens = allTokens.map(t => t.token);
         targetUserCount = allTokens.length;
+        console.log(`📢 Targeting all users: ${targetUserCount} devices`);
         break;
 
       case 'role':
@@ -125,6 +154,7 @@ exports.sendNotification = async (req, res, next) => {
         });
         tokens = roleTokens.map(t => t.token);
         targetUserCount = roleTokens.length;
+        console.log(`👥 Targeting ${role} users: ${targetUserCount} devices`);
         break;
 
       case 'specific':
@@ -137,6 +167,7 @@ exports.sendNotification = async (req, res, next) => {
         });
         tokens = specificTokens.map(t => t.token);
         targetUserCount = specificTokens.length;
+        console.log(`🎯 Targeting specific users: ${targetUserCount} devices`);
         break;
 
       default:
@@ -152,7 +183,8 @@ exports.sendNotification = async (req, res, next) => {
       });
     }
 
-    const baseMessage = {
+    // Prepare message
+    const message = {
       notification: {
         title,
         body,
@@ -164,17 +196,12 @@ exports.sendNotification = async (req, res, next) => {
         priority: priority
       },
       webpush: {
-        headers: {
-          'TTL': ttl.toString(),
-          'Urgency': priority === 'high' ? 'high' : 'normal'
-        },
         notification: {
           title,
           body,
           icon: '/biztras.png',
           badge: '/biztras.png',
           requireInteraction: priority === 'high',
-          silent: silent,
           ...(imageUrl && { image: imageUrl }),
           actions: actionUrl ? [
             { action: 'open', title: 'Open App' },
@@ -185,49 +212,56 @@ exports.sendNotification = async (req, res, next) => {
       }
     };
 
+    // Send notifications in batches
     const batchSize = 500;
     let sentCount = 0;
     let failedCount = 0;
     const failedTokens = [];
+
+    console.log(`📤 Sending notifications to ${tokens.length} devices in batches of ${batchSize}`);
 
     for (let i = 0; i < tokens.length; i += batchSize) {
       const batch = tokens.slice(i, i + batchSize);
       
       try {
         const response = await admin.messaging().sendMulticast({
-          ...baseMessage,
+          ...message,
           tokens: batch
         });
 
         sentCount += response.successCount;
         failedCount += response.failureCount;
 
+        // Handle failed tokens
         if (response.failureCount > 0) {
           response.responses.forEach((resp, idx) => {
             if (!resp.success) {
               const failedToken = batch[idx];
               failedTokens.push({
-                token: failedToken,
+                token: failedToken.substring(0, 20) + '...',
                 error: resp.error?.message
               });
               
+              // Deactivate invalid tokens
               if (resp.error?.code === 'messaging/invalid-registration-token' ||
                   resp.error?.code === 'messaging/registration-token-not-registered') {
                 NotificationToken.findOneAndUpdate(
                   { token: failedToken },
-                  { isActive: false }
+                  { isActive: false, lastUsed: new Date() }
                 ).exec();
               }
             }
           });
         }
+
+        console.log(`📊 Batch ${Math.floor(i/batchSize) + 1}: Sent ${response.successCount}, Failed ${response.failureCount}`);
       } catch (error) {
-        console.error('Error sending notification batch:', error);
+        console.error('❌ Error sending notification batch:', error);
         failedCount += batch.length;
       }
     }
 
-    console.log(`Notification sent: ${title} | Sent: ${sentCount} | Failed: ${failedCount}`);
+    console.log(`🎉 Notification "${title}" completed: ✅ ${sentCount} sent, ❌ ${failedCount} failed`);
 
     res.status(200).json({
       status: 'success',
@@ -236,15 +270,77 @@ exports.sendNotification = async (req, res, next) => {
       failedCount,
       totalTokens: tokens.length,
       targetUserCount,
-      failedTokens: failedTokens.slice(0, 10)
+      failedTokens: failedTokens.slice(0, 10) // Return first 10 failed tokens for debugging
     });
 
   } catch (error) {
+    console.error('❌ Error sending notification:', error);
     next(error);
   }
 };
 
-exports.getNotificationStats = async (req, res, next) => {
+// Send test notification
+const testNotification = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    const userTokens = await NotificationToken.find({
+      userId,
+      isActive: true
+    });
+
+    if (userTokens.length === 0) {
+      throw new AppError('No active notification tokens found for your account', 404);
+    }
+
+    const tokens = userTokens.map(t => t.token);
+    console.log(`🧪 Sending test notification to ${tokens.length} devices for user ${userId}`);
+    
+    const message = {
+      notification: {
+        title: '🧪 Test Notification',
+        body: 'This is a test notification from BizTras admin panel. If you can see this, push notifications are working correctly!'
+      },
+      data: {
+        test: 'true',
+        timestamp: Date.now().toString()
+      },
+      webpush: {
+        notification: {
+          title: '🧪 Test Notification',
+          body: 'This is a test notification from BizTras admin panel. If you can see this, push notifications are working correctly!',
+          icon: '/biztras.png',
+          badge: '/biztras.png',
+          requireInteraction: true,
+          actions: [
+            { action: 'open', title: 'Open App' },
+            { action: 'dismiss', title: 'Dismiss' }
+          ],
+          data: { url: '/' }
+        }
+      },
+      tokens
+    };
+
+    const response = await admin.messaging().sendMulticast(message);
+
+    console.log(`✅ Test notification sent: ${response.successCount} successful, ${response.failureCount} failed`);
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Test notification sent',
+      sentCount: response.successCount,
+      failedCount: response.failureCount
+    });
+
+  } catch (error) {
+    console.error('❌ Error sending test notification:', error);
+    next(error);
+  }
+};
+
+// Get notification statistics
+const getNotificationStats = async (req, res, next) => {
   try {
     const totalTokens = await NotificationToken.countDocuments({ isActive: true });
     const totalUsers = await User.countDocuments();
@@ -265,14 +361,26 @@ exports.getNotificationStats = async (req, res, next) => {
       lastUsed: { $gte: sevenDaysAgo }
     });
 
+    // Get device statistics
+    const deviceStats = await NotificationToken.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: '$deviceInfo.browser', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
     res.status(200).json({
       status: 'success',
       totalTokens,
       totalUsers,
       usersWithNotifications: usersWithNotifications.length,
-      notificationCoverage: totalUsers > 0 ? (usersWithNotifications.length / totalUsers * 100).toFixed(1) : 0,
+      notificationCoverage: totalUsers > 0 ? 
+        (usersWithNotifications.length / totalUsers * 100).toFixed(1) : 0,
       platformStats: platformStats.reduce((acc, stat) => {
         acc[stat._id] = stat.count;
+        return acc;
+      }, {}),
+      deviceStats: deviceStats.reduce((acc, stat) => {
+        acc[stat._id || 'Unknown'] = stat.count;
         return acc;
       }, {}),
       userStats: {
@@ -285,53 +393,17 @@ exports.getNotificationStats = async (req, res, next) => {
         percentage: totalTokens > 0 ? (recentTokens / totalTokens * 100).toFixed(1) : 0
       }
     });
+
   } catch (error) {
+    console.error('❌ Error fetching notification stats:', error);
     next(error);
   }
 };
 
-exports.testNotification = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    
-    const userTokens = await NotificationToken.find({
-      userId,
-      isActive: true
-    });
-
-    if (userTokens.length === 0) {
-      throw new AppError('No active notification tokens found for your account', 404);
-    }
-
-    const tokens = userTokens.map(t => t.token);
-    
-    const message = {
-      notification: {
-        title: 'Test Notification',
-        body: 'This is a test notification from BizTras admin panel. If you can see this, push notifications are working correctly!'
-      },
-      webpush: {
-        notification: {
-          title: 'Test Notification',
-          body: 'This is a test notification from BizTras admin panel. If you can see this, push notifications are working correctly!',
-          icon: '/biztras.png',
-          badge: '/biztras.png',
-          requireInteraction: true
-        }
-      },
-      tokens
-    };
-
-    const response = await admin.messaging().sendMulticast(message);
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Test notification sent',
-      sentCount: response.successCount,
-      failedCount: response.failureCount
-    });
-
-  } catch (error) {
-    next(error);
-  }
+module.exports = {
+  saveToken,
+  removeToken,
+  sendNotification,
+  testNotification,
+  getNotificationStats
 };

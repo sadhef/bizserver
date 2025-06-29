@@ -1,17 +1,28 @@
+// api/routes/notifications.js
 const express = require('express');
-const router = express.Router();
-const notificationController = require('../controllers/notificationController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
+const {
+  saveToken,
+  removeToken,
+  sendNotification,
+  testNotification,
+  getNotificationStats
+} = require('../controllers/notificationController');
 
+const router = express.Router();
+
+// Apply authentication to all routes
 router.use(protect);
 
-router.post('/token', notificationController.saveToken);
-router.delete('/token', notificationController.removeToken);
+// Public notification routes (for authenticated users)
+router.post('/token', saveToken);
+router.delete('/token', removeToken);
 
+// Admin-only notification routes
 router.use(restrictToAdmin);
 
-router.post('/send', notificationController.sendNotification);
-router.post('/test', notificationController.testNotification);
-router.get('/stats', notificationController.getNotificationStats);
+router.post('/send', sendNotification);
+router.post('/test', testNotification);
+router.get('/stats', getNotificationStats);
 
 module.exports = router;
