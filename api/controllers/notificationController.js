@@ -3,11 +3,6 @@ const NotificationToken = require('../models/NotificationToken');
 const User = require('../models/User');
 const { AppError } = require('../../utils/errorHandler');
 
-/**
- * Save FCM token for a user
- * @route POST /api/notifications/token
- * @access Private
- */
 exports.saveToken = async (req, res, next) => {
   try {
     const { token, platform = 'web' } = req.body;
@@ -17,33 +12,25 @@ exports.saveToken = async (req, res, next) => {
       throw new AppError('FCM token is required', 400);
     }
 
-    // Get user agent and IP for tracking
     const userAgent = req.headers['user-agent'] || '';
     const ipAddress = req.ip || req.connection.remoteAddress || '';
 
-    // Validate token with Firebase (dry run)
     try {
       await admin.messaging().send({
         token,
-        notification: {
-          title: 'Test',
-          body: 'Test'
-        }
-      }, true); // dry run
+        notification: { title: 'Test', body: 'Test' }
+      }, true);
     } catch (error) {
       if (error.code === 'messaging/invalid-registration-token') {
         throw new AppError('Invalid FCM token', 400);
       }
     }
 
-    // Deactivate any existing tokens for this user on the same platform
     await NotificationToken.deactivateUserTokens(userId, platform);
 
-    // Check if token already exists
     let existingToken = await NotificationToken.findOne({ token });
 
     if (existingToken) {
-      // Update existing token
       existingToken.userId = userId;
       existingToken.platform = platform;
       existingToken.isActive = true;
@@ -52,7 +39,6 @@ exports.saveToken = async (req, res, next) => {
       existingToken.ipAddress = ipAddress;
       await existingToken.save();
     } else {
-      // Create new token
       await NotificationToken.create({
         userId,
         token,
@@ -72,11 +58,6 @@ exports.saveToken = async (req, res, next) => {
   }
 };
 
-/**
- * Remove FCM token
- * @route DELETE /api/notifications/token
- * @access Private
- */
 exports.removeToken = async (req, res, next) => {
   try {
     const { token } = req.body;
@@ -100,17 +81,12 @@ exports.removeToken = async (req, res, next) => {
   }
 };
 
-/**
- * Send push notification with advanced features
- * @route POST /api/notifications/send
- * @access Admin
- */
 exports.sendNotification = async (req, res, next) => {
   try {
     const { 
-      title,
-        body,
-        targetType, 
+      title, 
+      body, 
+      targetType, 
       targetUsers, 
       role,
       imageUrl,
@@ -127,7 +103,6 @@ exports.sendNotification = async (req, res, next) => {
     let tokens = [];
     let targetUserCount = 0;
 
-    // Get tokens based on target type
     switch (targetType) {
       case 'all':
         const allTokens = await NotificationToken.find({ isActive: true })
@@ -177,7 +152,6 @@ exports.sendNotification = async (req, res, next) => {
       });
     }
 
-    // Prepare enhanced notification payload
     const baseMessage = {
       notification: {
         title,
@@ -203,23 +177,14 @@ exports.sendNotification = async (req, res, next) => {
           silent: silent,
           ...(imageUrl && { image: imageUrl }),
           actions: actionUrl ? [
-            {
-              action: 'open',
-              title: 'Open App'
-            },
-            {
-              action: 'dismiss',
-              title: 'Dismiss'
-            }
+            { action: 'open', title: 'Open App' },
+            { action: 'dismiss', title: 'Dismiss' }
           ] : undefined,
-          data: {
-            url: actionUrl || '/'
-          }
+          data: { url: actionUrl || '/' }
         }
       }
     };
 
-    // Send notifications in batches
     const batchSize = 500;
     let sentCount = 0;
     let failedCount = 0;
@@ -237,7 +202,6 @@ exports.sendNotification = async (req, res, next) => {
         sentCount += response.successCount;
         failedCount += response.failureCount;
 
-        // Handle failed tokens
         if (response.failureCount > 0) {
           response.responses.forEach((resp, idx) => {
             if (!resp.success) {
@@ -247,7 +211,6 @@ exports.sendNotification = async (req, res, next) => {
                 error: resp.error?.message
               });
               
-              // Deactivate invalid tokens
               if (resp.error?.code === 'messaging/invalid-registration-token' ||
                   resp.error?.code === 'messaging/registration-token-not-registered') {
                 NotificationToken.findOneAndUpdate(
@@ -264,7 +227,6 @@ exports.sendNotification = async (req, res, next) => {
       }
     }
 
-    // Log notification for analytics
     console.log(`Notification sent: ${title} | Sent: ${sentCount} | Failed: ${failedCount}`);
 
     res.status(200).json({
@@ -274,7 +236,7 @@ exports.sendNotification = async (req, res, next) => {
       failedCount,
       totalTokens: tokens.length,
       targetUserCount,
-      failedTokens: failedTokens.slice(0, 10) // Limit for response size
+      failedTokens: failedTokens.slice(0, 10)
     });
 
   } catch (error) {
@@ -282,30 +244,21 @@ exports.sendNotification = async (req, res, next) => {
   }
 };
 
-/**
- * Get detailed notification statistics
- * @route GET /api/notifications/stats
- * @access Admin
- */
 exports.getNotificationStats = async (req, res, next) => {
   try {
-    // Basic counts
     const totalTokens = await NotificationToken.countDocuments({ isActive: true });
     const totalUsers = await User.countDocuments();
     const usersWithNotifications = await NotificationToken.distinct('userId', { isActive: true });
 
-    // Platform breakdown
     const platformStats = await NotificationToken.aggregate([
       { $match: { isActive: true } },
       { $group: { _id: '$platform', count: { $sum: 1 } } }
     ]);
 
-    // Role-based breakdown
     const adminUsers = await User.countDocuments({ isAdmin: true });
     const cloudUsers = await User.countDocuments({ isCloud: true });
     const regularUsers = await User.countDocuments({ isAdmin: false, isCloud: false });
 
-    // Recent activity (last 7 days)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recentTokens = await NotificationToken.countDocuments({
       isActive: true,
@@ -337,16 +290,10 @@ exports.getNotificationStats = async (req, res, next) => {
   }
 };
 
-/**
- * Test notification (send to current admin)
- * @route POST /api/notifications/test
- * @access Admin
- */
 exports.testNotification = async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // Get admin's tokens
     const userTokens = await NotificationToken.find({
       userId,
       isActive: true
@@ -384,27 +331,6 @@ exports.testNotification = async (req, res, next) => {
       failedCount: response.failureCount
     });
 
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Clean up old inactive tokens
- * @route POST /api/notifications/cleanup
- * @access Admin
- */
-exports.cleanupTokens = async (req, res, next) => {
-  try {
-    const { daysOld = 30 } = req.body;
-    
-    const result = await NotificationToken.cleanupOldTokens(daysOld);
-    
-    res.status(200).json({
-      status: 'success',
-      message: `Cleaned up ${result.deletedCount} old inactive tokens`,
-      deletedCount: result.deletedCount
-    });
   } catch (error) {
     next(error);
   }

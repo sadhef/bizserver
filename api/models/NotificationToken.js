@@ -36,12 +36,10 @@ const notificationTokenSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Compound index for efficient queries
 notificationTokenSchema.index({ userId: 1, isActive: 1 });
 notificationTokenSchema.index({ token: 1 });
 notificationTokenSchema.index({ isActive: 1, lastUsed: -1 });
 
-// Pre-save middleware to update lastUsed
 notificationTokenSchema.pre('save', function(next) {
   if (this.isModified('isActive') && this.isActive) {
     this.lastUsed = new Date();
@@ -49,7 +47,6 @@ notificationTokenSchema.pre('save', function(next) {
   next();
 });
 
-// Static method to clean up old inactive tokens
 notificationTokenSchema.statics.cleanupOldTokens = function(daysOld = 30) {
   const cutoffDate = new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000);
   return this.deleteMany({
@@ -58,7 +55,6 @@ notificationTokenSchema.statics.cleanupOldTokens = function(daysOld = 30) {
   });
 };
 
-// Static method to deactivate tokens for a user
 notificationTokenSchema.statics.deactivateUserTokens = function(userId, platform = null) {
   const query = { userId, isActive: true };
   if (platform) {

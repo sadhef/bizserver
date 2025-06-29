@@ -1,6 +1,5 @@
 const admin = require('firebase-admin');
 
-// Firebase service account configuration
 const serviceAccount = {
   type: "service_account",
   project_id: "biztras-4a141",
@@ -15,7 +14,6 @@ const serviceAccount = {
   universe_domain: "googleapis.com"
 };
 
-// Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   try {
     admin.initializeApp({
@@ -29,5 +27,4 @@ if (!admin.apps.length) {
   }
 }
 
-// Export admin instance
 module.exports = admin;

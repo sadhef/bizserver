@@ -5,10 +5,8 @@ const dotenv = require('dotenv');
 const { handleError } = require('./utils/errorHandler');
 const connectDB = require('./config/db');
 
-// Load environment variables
 dotenv.config();
 
-// Import ALL routes including notifications
 const authRoutes = require('./api/routes/auth');
 const userRoutes = require('./api/routes/users');
 const challengeRoutes = require('./api/routes/challenges');
@@ -17,15 +15,14 @@ const settingsRoutes = require('./api/routes/settings');
 const cloudReportRoutes = require('./api/routes/cloud-report');
 const backupServerRoutes = require('./api/routes/backup-server');
 const chatRoutes = require('./api/routes/chat');
-const notificationRoutes = require('./api/routes/notifications'); // ← MAKE SURE THIS EXISTS
+const notificationRoutes = require('./api/routes/notifications'); // CRITICAL
 
 const app = express();
 
-// CORS for production
 const allowedOrigins = [
   'http://localhost:3000',
   'https://biztrastech.vercel.app',
-  'https://biztras-4a141.firebaseapp.com' // Add Firebase domain
+  'https://biztras-4a141.firebaseapp.com'
 ];
 
 app.use(cors({
@@ -46,22 +43,30 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.options('*', cors());
 
-// Logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// Health check
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// API Routes - CRITICAL: Include notification routes
+// CRITICAL: API Routes with notifications
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/challenges', challengeRoutes);
@@ -70,7 +75,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/cloud-report', cloudReportRoutes);
 app.use('/api/backup-server', backupServerRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/notifications', notificationRoutes); // ← CRITICAL: This line
+app.use('/api/notifications', notificationRoutes); // CRITICAL LINE
 
 // Routes without /api prefix (compatibility)
 app.use('/auth', authRoutes);
@@ -81,15 +86,35 @@ app.use('/settings', settingsRoutes);
 app.use('/cloud-report', cloudReportRoutes);
 app.use('/backup-server', backupServerRoutes);
 app.use('/chat', chatRoutes);
-app.use('/notifications', notificationRoutes); // ← CRITICAL: This line too
+app.use('/notifications', notificationRoutes); // CRITICAL LINE
 
-// Error handling
+// Debug route
+app.get('/api/debug/routes', (req, res) => {
+  res.json({
+    message: 'Notification routes are loaded',
+    timestamp: new Date().toISOString(),
+    notificationEndpoints: [
+      'POST /api/notifications/token',
+      'DELETE /api/notifications/token',
+      'POST /api/notifications/send',
+      'POST /api/notifications/test',
+      'GET /api/notifications/stats'
+    ]
+  });
+});
+
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   handleError(err, req, res, next);
 });
 
-// 404 handler
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    status: 'error',
+    message: `API route ${req.originalUrl} not found`
+  });
+});
+
 app.use('*', (req, res) => {
   console.log('404 - Route not found:', req.method, req.originalUrl);
   res.status(404).json({
@@ -98,18 +123,18 @@ app.use('*', (req, res) => {
   });
 });
 
-// Start server
 const PORT = process.env.PORT || 5000;
+
 const startServer = async () => {
   try {
     await connectDB();
     console.log('MongoDB connected successfully');
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
-      console.log('Available routes:');
-      console.log('- POST /api/notifications/token');
-      console.log('- POST /api/notifications/send');
-      console.log('- GET /api/notifications/stats');
+      console.log('🔔 Notification routes loaded:');
+      console.log('  - POST /api/notifications/token');
+      console.log('  - POST /api/notifications/send');
+      console.log('  - GET /api/notifications/stats');
     });
   } catch (error) {
     console.error('Failed to start server:', error);
