@@ -5,14 +5,6 @@ const { AppError } = require('../../utils/errorHandler');
 // Environment variables
 const JWT_SECRET = process.env.JWT_SECRET || '9ffbc51e975aa664c84b7f583d9d3fe7863257f331814869a4ac867f520177e3617b50ffa7953640d383020440de5e22d0a7b3f08bebde1e3ca1fea7c7ceba15';
 
-// Helper function to normalize boolean values
-const normalizeBoolean = (value) => {
-  if (value === true || value === 'true' || value === 1 || value === '1') {
-    return true;
-  }
-  return false;
-};
-
 // Protect routes - verify JWT token
 exports.protect = async (req, res, next) => {
   try {
@@ -40,11 +32,8 @@ exports.protect = async (req, res, next) => {
     // Grant access to protected route
     req.user = {
       id: user._id,
-      email: user.email,
-      name: user.name,
-      isUser: normalizeBoolean(user.isUser),
-      isAdmin: normalizeBoolean(user.isAdmin),
-      isCloud: normalizeBoolean(user.isCloud)
+      isAdmin: user.isAdmin,
+      isCloud: user.isCloud
     };
     
     next();
@@ -62,9 +51,11 @@ exports.protect = async (req, res, next) => {
 // Restrict to admin users
 exports.restrictTo = (...roles) => {
   return (req, res, next) => {
+    // Check if user has admin role
     if (!roles.includes('admin') || !req.user.isAdmin) {
       return next(new AppError('You do not have permission to perform this action', 403));
     }
+    
     next();
   };
 };
@@ -74,6 +65,7 @@ exports.restrictToAdmin = (req, res, next) => {
   if (!req.user.isAdmin) {
     return next(new AppError('This route is restricted to administrators', 403));
   }
+  
   next();
 };
 
@@ -82,21 +74,6 @@ exports.restrictToCloud = (req, res, next) => {
   if (!req.user.isCloud) {
     return next(new AppError('This route is restricted to cloud users', 403));
   }
-  next();
-};
-
-// Restrict to user role (isUser=true)
-exports.restrictToUser = (req, res, next) => {
-  if (!req.user.isUser) {
-    return next(new AppError('This route is restricted to users with user access', 403));
-  }
-  next();
-};
-
-// Allow users or admins (for challenges)
-exports.allowUserOrAdmin = (req, res, next) => {
-  if (!req.user.isUser && !req.user.isAdmin) {
-    return next(new AppError('Access denied. You need user access to view challenges', 403));
-  }
+  
   next();
 };
