@@ -36,12 +36,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  isUser: {
+    type: Boolean,
+    default: true
+  },
   isAdmin: {
     type: Boolean,
     default: false
   },
   isCloud: {
-    type: Boolean, // Ensure this is defined as Boolean, not String
+    type: Boolean,
     default: false
   },
   registrationTime: {
@@ -58,16 +62,13 @@ userSchema.index({ email: 1 }, { unique: true });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  // Only hash the password if it's modified (or new)
   if (!this.isModified('password')) {
     return next();
   }
   
   try {
     console.log('Hashing password for user:', this.email);
-    // Generate salt
     const salt = await bcrypt.genSalt(10);
-    // Hash password
     this.password = await bcrypt.hash(this.password, salt);
     console.log('Password hashed successfully');
     next();
@@ -79,6 +80,13 @@ userSchema.pre('save', async function(next) {
 
 // Convert string values to proper booleans before saving
 userSchema.pre('save', function(next) {
+  // Ensure isUser is always a boolean
+  if (this.isUser === 'true' || this.isUser === '1' || this.isUser === 1) {
+    this.isUser = true;
+  } else if (this.isUser === 'false' || this.isUser === '0' || this.isUser === 0) {
+    this.isUser = false;
+  }
+  
   // Ensure isAdmin is always a boolean
   if (this.isAdmin === 'true' || this.isAdmin === '1' || this.isAdmin === 1) {
     this.isAdmin = true;
@@ -94,6 +102,7 @@ userSchema.pre('save', function(next) {
   }
   
   console.log('Normalized user permissions:', {
+    isUser: this.isUser,
     isAdmin: this.isAdmin,
     isCloud: this.isCloud
   });
@@ -111,8 +120,6 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   }
 };
 
-// Create the model
 const User = mongoose.model('User', userSchema);
 
-// Export the model
 module.exports = User;

@@ -13,9 +13,9 @@ const authRoutes = require('./api/routes/auth');
 const userRoutes = require('./api/routes/users');
 const challengeRoutes = require('./api/routes/challenges');
 const progressRoutes = require('./api/routes/progress');
-const settingsRoutes = require('./api/routes/settings');
+const settingsRoutes = require('./api/routes/settings'); // ADDED: Settings routes
 const cloudReportRoutes = require('./api/routes/cloud-report');
-const backupServerRoutes = require('./api/routes/backup-server'); // New backup server routes
+const backupServerRoutes = require('./api/routes/backup-server');
 const chatRoutes = require('./api/routes/chat');
 
 // Create Express app
@@ -77,9 +77,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/challenges', challengeRoutes);
 app.use('/api/progress', progressRoutes);
-app.use('/api/settings', settingsRoutes);
+app.use('/api/settings', settingsRoutes); // ADDED: Settings routes
 app.use('/api/cloud-report', cloudReportRoutes); 
-app.use('/api/backup-server', backupServerRoutes); // New backup server routes
+app.use('/api/backup-server', backupServerRoutes);
 app.use('/api/chat', chatRoutes);
 
 // Routes without /api prefix (for compatibility)
@@ -87,9 +87,9 @@ app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/challenges', challengeRoutes);
 app.use('/progress', progressRoutes);
-app.use('/settings', settingsRoutes);
+app.use('/settings', settingsRoutes); // ADDED: Settings routes
 app.use('/cloud-report', cloudReportRoutes);
-app.use('/backup-server', backupServerRoutes); // New backup server routes
+app.use('/backup-server', backupServerRoutes);
 app.use('/chat', chatRoutes); 
 
 // Error Handling Middleware

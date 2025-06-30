@@ -3,10 +3,13 @@ const router = express.Router();
 const settingsController = require('../controllers/settingsController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Get settings
-router.get('/', protect, settingsController.getSettings);
+// Get system settings (admin only)
+router.get('/', protect, restrictToAdmin, settingsController.getSettings);
 
-// Update settings (admin only)
+// Update system settings (admin only)
 router.post('/update', protect, restrictToAdmin, settingsController.updateSettings);
+
+// Reset settings to default (admin only)
+router.post('/reset', protect, restrictToAdmin, settingsController.resetSettings);
 
 module.exports = router;

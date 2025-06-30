@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const Setting = require('./Setting');
 
 const progressSchema = new mongoose.Schema({
   userId: {
@@ -13,11 +12,11 @@ const progressSchema = new mongoose.Schema({
   },
   totalTimeLimit: {
     type: Number,
-    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
+    default: 3600 // Default time limit: 1 hour
   },
   timeRemaining: {
     type: Number,
-    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
+    default: 3600 // Default time limit: 1 hour
   },
   currentLevel: {
     type: Number,
@@ -113,11 +112,23 @@ progressSchema.methods.useHint = function(levelNumber) {
   return this.save();
 };
 
-// Static method to create a new progress with the current time limit from settings
+// FIXED: Static method to create progress with settings integration
 progressSchema.statics.createWithTimeLimit = async function(userId) {
-  // Get current time limit from settings
-  const settings = await Setting.getSettings();
-  const timeLimit = settings ? settings.defaultTimeLimit : 3600; // Default to 1 hour if no settings
+  let timeLimit = 3600; // Default to 1 hour
+  
+  try {
+    // Try to get settings using the correct method
+    const Setting = mongoose.model('Setting');
+    const settings = await Setting.getSettings();
+    if (settings && settings.defaultTimeLimit) {
+      timeLimit = settings.defaultTimeLimit;
+      console.log('📊 Using settings time limit:', timeLimit, 'seconds');
+    }
+  } catch (error) {
+    console.log('⚠️ Could not load settings, using default time limit (1 hour)');
+  }
+  
+  console.log('🕒 Creating progress with time limit:', timeLimit, 'seconds');
   
   const progress = await this.create({
     userId,
@@ -126,6 +137,27 @@ progressSchema.statics.createWithTimeLimit = async function(userId) {
     startTime: new Date(),
     currentLevel: 1
   });
+  
+  return progress;
+};
+
+// Static method to update existing progress with new time limit (for admin updates)
+progressSchema.statics.updateTimeLimitForUser = async function(userId, newTimeLimit) {
+  const progress = await this.findOne({ userId });
+  
+  if (progress) {
+    // Calculate the ratio of time remaining to apply to new limit
+    const oldTimeLimit = progress.totalTimeLimit || 3600;
+    const timeElapsed = oldTimeLimit - progress.timeRemaining;
+    const newTimeRemaining = Math.max(0, newTimeLimit - timeElapsed);
+    
+    progress.totalTimeLimit = newTimeLimit;
+    progress.timeRemaining = newTimeRemaining;
+    progress.lastUpdated = new Date();
+    
+    await progress.save();
+    console.log(`🔄 Updated time limit for user ${userId}: ${newTimeLimit}s (${newTimeRemaining}s remaining)`);
+  }
   
   return progress;
 };

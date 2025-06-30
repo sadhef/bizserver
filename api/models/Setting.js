@@ -4,8 +4,8 @@ const settingSchema = new mongoose.Schema({
   defaultTimeLimit: {
     type: Number,
     default: 3600, // 1 hour in seconds
-    min: [300, 'Default time limit must be at least 5 minutes (300 seconds)'],
-    max: [86400, 'Default time limit cannot exceed 24 hours (86400 seconds)']
+    min: [300, 'Time limit must be at least 5 minutes (300 seconds)'],
+    max: [86400, 'Time limit cannot exceed 24 hours (86400 seconds)']
   },
   maxAttempts: {
     type: Number,
@@ -14,12 +14,13 @@ const settingSchema = new mongoose.Schema({
   },
   hintPenalty: {
     type: Number,
-    default: 0, // Time penalty in seconds for using hints
+    default: 0, // No penalty by default
     min: [0, 'Hint penalty cannot be negative']
   },
   systemName: {
     type: String,
     default: 'BizTras Challenge System',
+    trim: true,
     maxlength: [100, 'System name cannot exceed 100 characters']
   },
   maintenanceMode: {
@@ -42,38 +43,37 @@ settingSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('Setting', settingSchema);
-
-// utils/timer.js - Helper functions for time formatting
-exports.formatTimeRemaining = (seconds) => {
-  if (seconds <= 0) return 'Time Expired';
+// Static method to get settings (creates default if none exist)
+settingSchema.statics.getSettings = async function() {
+  let settings = await this.findOne();
   
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  } else {
-    return `${secs}s`;
+  if (!settings) {
+    settings = await this.create({
+      defaultTimeLimit: 3600,
+      maxAttempts: 0,
+      hintPenalty: 0,
+      systemName: 'BizTras Challenge System',
+      maintenanceMode: false
+    });
   }
+  
+  return settings;
 };
 
-exports.formatTimeDetailed = (seconds) => {
-  if (seconds <= 0) return 'No time';
+// Static method to update or create settings
+settingSchema.statics.updateSettings = async function(updateData) {
+  let settings = await this.findOne();
   
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  
-  if (hours > 0 && minutes > 0) {
-    return `${hours} hour${hours !== 1 ? 's' : ''} and ${minutes} minute${minutes !== 1 ? 's' : ''}`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours !== 1 ? 's' : ''}`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+  if (!settings) {
+    settings = await this.create(updateData);
   } else {
-    return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+    Object.assign(settings, updateData);
+    await settings.save();
   }
+  
+  return settings;
 };
+
+const Setting = mongoose.model('Setting', settingSchema);
+
+module.exports = Setting;

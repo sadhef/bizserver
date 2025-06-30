@@ -58,8 +58,9 @@ exports.register = async (req, res, next) => {
         institution: institution || '',
         location: location || '',
         registrationTime: new Date(),
+        isUser: true,
         isAdmin: false,
-        isCloud: false // Explicitly set default values for permissions
+        isCloud: false
       });
       
       // Save to database with explicit await
@@ -99,6 +100,7 @@ exports.register = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
+      isUser: true,
       isAdmin: false,
       isCloud: false,
       registrationTime: user.registrationTime
@@ -153,12 +155,15 @@ exports.login = async (req, res, next) => {
     await user.save({ validateBeforeSave: false });
     
     // Ensure user permissions are normalized to boolean
+    const isUserFlag = normalizeBoolean(user.isUser);
     const isAdminFlag = normalizeBoolean(user.isAdmin);
     const isCloudFlag = normalizeBoolean(user.isCloud);
     
     console.log('User permissions:', {
+      isUser: isUserFlag,
       isAdmin: isAdminFlag,
       isCloud: isCloudFlag,
+      rawIsUser: user.isUser,
       rawIsAdmin: user.isAdmin,
       rawIsCloud: user.isCloud
     });
@@ -175,6 +180,7 @@ exports.login = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
+      isUser: isUserFlag,
       isAdmin: isAdminFlag,
       isCloud: isCloudFlag,
       registrationTime: user.registrationTime,
@@ -202,6 +208,7 @@ exports.getCurrentUser = async (req, res, next) => {
     }
     
     // Ensure permissions are properly normalized
+    const isUserFlag = normalizeBoolean(user.isUser);
     const isAdminFlag = normalizeBoolean(user.isAdmin);
     const isCloudFlag = normalizeBoolean(user.isCloud);
     
@@ -214,6 +221,7 @@ exports.getCurrentUser = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
+      isUser: isUserFlag,
       isAdmin: isAdminFlag,
       isCloud: isCloudFlag,
       registrationTime: user.registrationTime,
@@ -272,7 +280,8 @@ exports.adminLogin = async (req, res, next) => {
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
     
-    // Also normalize cloud access flag
+    // Also normalize other flags
+    const isUserFlag = normalizeBoolean(user.isUser);
     const isCloudFlag = normalizeBoolean(user.isCloud);
     
     // Generate token
@@ -287,6 +296,7 @@ exports.adminLogin = async (req, res, next) => {
       education: user.education,
       institution: user.institution,
       location: user.location,
+      isUser: isUserFlag,
       isAdmin: isAdminFlag,
       isCloud: isCloudFlag,
       registrationTime: user.registrationTime,
