@@ -42,38 +42,24 @@ settingSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('Setting', settingSchema);
-
-// utils/timer.js - Helper functions for time formatting
-exports.formatTimeRemaining = (seconds) => {
-  if (seconds <= 0) return 'Time Expired';
+// Static method to get settings (create default if not exists)
+settingSchema.statics.getSettings = async function() {
+  let settings = await this.findOne();
   
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  } else {
-    return `${secs}s`;
+  if (!settings) {
+    settings = await this.create({
+      defaultTimeLimit: 3600,
+      maxAttempts: 0,
+      hintPenalty: 0,
+      systemName: 'BizTras Challenge System',
+      maintenanceMode: false
+    });
   }
+  
+  return settings;
 };
 
-exports.formatTimeDetailed = (seconds) => {
-  if (seconds <= 0) return 'No time';
-  
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  
-  if (hours > 0 && minutes > 0) {
-    return `${hours} hour${hours !== 1 ? 's' : ''} and ${minutes} minute${minutes !== 1 ? 's' : ''}`;
-  } else if (hours > 0) {
-    return `${hours} hour${hours !== 1 ? 's' : ''}`;
-  } else if (minutes > 0) {
-    return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-  } else {
-    return `${seconds} second${seconds !== 1 ? 's' : ''}`;
-  }
-};
+// Create the model
+const Setting = mongoose.model('Setting', settingSchema);
+
+module.exports = Setting;

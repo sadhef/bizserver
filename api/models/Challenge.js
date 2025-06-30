@@ -49,4 +49,12 @@ challengeSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('Challenge', challengeSchema);
+// Static method to get the number of enabled challenges
+challengeSchema.statics.getNumberOfLevels = async function() {
+  return await this.countDocuments({ enabled: true });
+};
+
+// Create the model
+const Challenge = mongoose.model('Challenge', challengeSchema);
+
+module.exports = Challenge;
