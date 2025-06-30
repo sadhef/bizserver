@@ -46,11 +46,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Handle preflight requests
 app.options('*', cors());
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
-  next();
-});
 
 // Add explicit CORS headers for all routes
 app.use((req, res, next) => {

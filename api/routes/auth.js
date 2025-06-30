@@ -9,8 +9,6 @@ router.post('/register', authController.register);
 // User login
 router.post('/login', authController.login);
 
-// Admin login
-router.post('/admin/login', authController.adminLogin);
 
 // Get current user (protected route)
 router.get('/me', protect, authController.getCurrentUser);
