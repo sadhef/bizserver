@@ -29,9 +29,63 @@ const challengeSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Flag cannot exceed 100 characters']
   },
+  difficulty: {
+    type: String,
+    enum: ['easy', 'medium', 'hard'],
+    default: 'easy'
+  },
+  points: {
+    type: Number,
+    default: 100,
+    min: [1, 'Points must be at least 1']
+  },
+  category: {
+    type: String,
+    enum: ['frontend', 'backend', 'fullstack', 'algorithms', 'databases', 'security'],
+    default: 'algorithms'
+  },
+  tags: [{
+    type: String,
+    trim: true
+  }],
+  timeLimit: {
+    type: Number, // in minutes
+    default: 60
+  },
+  content: {
+    instructions: {
+      type: String,
+      default: ''
+    },
+    resources: [{
+      type: String
+    }],
+    hints: [{
+      type: String
+    }]
+  },
   enabled: {
     type: Boolean,
     default: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  completionCount: {
+    type: Number,
+    default: 0
+  },
+  averageRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
   createdAt: {
     type: Date,
@@ -48,5 +102,11 @@ challengeSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Index for better query performance
+challengeSchema.index({ enabled: 1, createdAt: -1 });
+challengeSchema.index({ levelNumber: 1 });
+challengeSchema.index({ difficulty: 1 });
+challengeSchema.index({ category: 1 });
 
 module.exports = mongoose.model('Challenge', challengeSchema);

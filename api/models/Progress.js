@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
-const Setting = require('./Setting');
 
 const progressSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    unique: true // One progress record per user
   },
   startTime: {
     type: Date,
@@ -13,40 +13,19 @@ const progressSchema = new mongoose.Schema({
   },
   totalTimeLimit: {
     type: Number,
-    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
+    default: 3600 // Default: 1 hour in seconds
   },
   timeRemaining: {
     type: Number,
-    default: 3600 // Default time limit: 1 hour (will be overridden by settings)
+    default: 3600
   },
   currentLevel: {
     type: Number,
     default: 1
   },
-  // Store progress for each level dynamically
-  levelStatus: {
-    type: Map,
-    of: Boolean,
-    default: () => new Map()
-  },
-  // Store all flag attempts for each level
-  flagsAttempted: {
-    type: Map,
-    of: [String],
-    default: () => new Map()
-  },
-  // Track attempt counts for each level
-  attemptCounts: {
-    type: Map,
-    of: Number,
-    default: () => new Map()
-  },
-  // Track if hints were used for each level
-  hintsUsed: {
-    type: Map, 
-    of: Boolean,
-    default: () => new Map()
-  },
+  completedLevels: [{
+    type: Number
+  }],
   completed: {
     type: Boolean,
     default: false
@@ -54,88 +33,125 @@ const progressSchema = new mongoose.Schema({
   completedAt: {
     type: Date
   },
-  lastUpdated: {
+  // Track flag attempts for each level
+  levelAttempts: {
+    type: Map,
+    of: {
+      attempts: { type: Number, default: 0 },
+      flags: [String], // Store all attempted flags
+      completedAt: Date
+    },
+    default: () => new Map()
+  },
+  // Track hint usage for each level
+  levelHints: {
+    type: Map,
+    of: Boolean,
+    default: () => new Map()
+  },
+  lastActivity: {
     type: Date,
     default: Date.now
+  },
+  finalScore: {
+    type: Number,
+    default: 0
+  },
+  timeExpired: {
+    type: Boolean,
+    default: false
   }
+}, {
+  timestamps: true
 });
 
-// Index for efficient lookups
+// Index for efficient queries
 progressSchema.index({ userId: 1 });
+progressSchema.index({ completed: 1 });
+progressSchema.index({ timeExpired: 1 });
 
-// Method to check if a level is completed
-progressSchema.methods.isLevelCompleted = function(levelNumber) {
-  return this.levelStatus.get(levelNumber.toString()) || false;
-};
-
-// Method to get all completed levels
-progressSchema.methods.getCompletedLevels = function() {
-  const completedLevels = [];
-  this.levelStatus.forEach((value, key) => {
-    if (value) completedLevels.push(parseInt(key));
-  });
-  return completedLevels.sort((a, b) => a - b);
-};
-
-// Method to update level completion
-progressSchema.methods.completeLevel = function(levelNumber) {
-  this.levelStatus.set(levelNumber.toString(), true);
-  this.lastUpdated = new Date();
-  return this.save();
-};
-
-// Method to add a flag attempt
-progressSchema.methods.addFlagAttempt = function(levelNumber, flag) {
-  const level = levelNumber.toString();
+// Method to check if time has expired
+progressSchema.methods.isTimeExpired = function() {
+  if (this.completed || this.timeExpired) return true;
   
-  // Initialize arrays if they don't exist
-  if (!this.flagsAttempted.has(level)) {
-    this.flagsAttempted.set(level, []);
+  const now = new Date();
+  const elapsed = Math.floor((now - this.startTime) / 1000);
+  const remaining = Math.max(0, this.totalTimeLimit - elapsed);
+  
+  if (remaining <= 0) {
+    this.timeExpired = true;
+    this.timeRemaining = 0;
+    return true;
   }
   
-  // Add the flag to attempts
-  const attempts = this.flagsAttempted.get(level) || [];
-  attempts.push(flag);
-  this.flagsAttempted.set(level, attempts);
-  
-  // Increment attempt count
-  const currentCount = this.attemptCounts.get(level) || 0;
-  this.attemptCounts.set(level, currentCount + 1);
-  
-  this.lastUpdated = new Date();
-  return this.save();
+  this.timeRemaining = remaining;
+  return false;
 };
 
-// Method to use a hint
-progressSchema.methods.useHint = function(levelNumber) {
-  this.hintsUsed.set(levelNumber.toString(), true);
-  this.lastUpdated = new Date();
-  return this.save();
+// Method to add flag attempt
+progressSchema.methods.addFlagAttempt = function(level, flag) {
+  const levelStr = level.toString();
+  
+  if (!this.levelAttempts.has(levelStr)) {
+    this.levelAttempts.set(levelStr, {
+      attempts: 0,
+      flags: [],
+      completedAt: null
+    });
+  }
+  
+  const attemptData = this.levelAttempts.get(levelStr);
+  attemptData.attempts += 1;
+  attemptData.flags.push(flag);
+  
+  this.levelAttempts.set(levelStr, attemptData);
+  this.lastActivity = new Date();
 };
 
-// Static method to create a new progress with the current time limit from settings
-progressSchema.statics.createWithTimeLimit = async function(userId) {
-  // Get current time limit from settings
-  const settings = await Setting.getSettings();
-  const timeLimit = settings ? settings.defaultTimeLimit : 3600; // Default to 1 hour if no settings
+// Method to complete level
+progressSchema.methods.completeLevel = function(level) {
+  if (!this.completedLevels.includes(level)) {
+    this.completedLevels.push(level);
+    this.currentLevel = level + 1;
+    
+    // Mark level as completed in attempts
+    const levelStr = level.toString();
+    if (this.levelAttempts.has(levelStr)) {
+      const attemptData = this.levelAttempts.get(levelStr);
+      attemptData.completedAt = new Date();
+      this.levelAttempts.set(levelStr, attemptData);
+    }
+    
+    this.lastActivity = new Date();
+  }
+};
+
+// Method to use hint
+progressSchema.methods.useHint = function(level) {
+  this.levelHints.set(level.toString(), true);
+  this.lastActivity = new Date();
+};
+
+// Method to check if hint was used
+progressSchema.methods.isHintUsed = function(level) {
+  return this.levelHints.get(level.toString()) || false;
+};
+
+// Static method to get or create progress for user
+progressSchema.statics.getOrCreateProgress = async function(userId, settings) {
+  let progress = await this.findOne({ userId });
   
-  const progress = await this.create({
-    userId,
-    totalTimeLimit: timeLimit,
-    timeRemaining: timeLimit,
-    startTime: new Date(),
-    currentLevel: 1
-  });
+  if (!progress) {
+    const timeLimit = settings?.defaultTimeLimit || 3600;
+    progress = await this.create({
+      userId,
+      totalTimeLimit: timeLimit,
+      timeRemaining: timeLimit,
+      startTime: new Date()
+    });
+  }
   
   return progress;
 };
 
-// Pre-save hook to update lastUpdated
-progressSchema.pre('save', function(next) {
-  this.lastUpdated = new Date();
-  next();
-});
-
-const Progress = mongoose.model('Progress', progressSchema);
-
-module.exports = Progress;
+module.exports = mongoose.model('Progress', progressSchema);
