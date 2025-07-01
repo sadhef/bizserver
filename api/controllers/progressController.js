@@ -6,25 +6,15 @@ const { AppError } = require('../../utils/errorHandler');
 
 /**
  * Get progress for the current user
- * @route GET /api/progress/me
+ * @route GET /api/progress/my-progress
  * @access Private (User)
  */
 exports.getMyProgress = async (req, res, next) => {
   try {
-    let progress = await Progress.findOne({ userId: req.user.id });
+    const progress = await Progress.findOne({ userId: req.user.id });
     
-    // If no progress exists, create it for the user
     if (!progress) {
-      console.log('No progress found for user:', req.user.id, '- creating new progress');
-      
-      try {
-        // Use the static method that gets time limit from settings
-        progress = await Progress.createWithTimeLimit(req.user.id);
-        console.log('Progress created successfully for user:', req.user.id);
-      } catch (createError) {
-        console.error('Error creating progress:', createError);
-        throw new AppError('Failed to initialize user progress', 500);
-      }
+      throw new AppError('Progress not found for this user', 404);
     }
     
     // Calculate current time remaining
@@ -42,7 +32,7 @@ exports.getMyProgress = async (req, res, next) => {
     const completedLevels = progress.getCompletedLevels();
     
     // Get total available levels
-    const totalLevels = await Challenge.countDocuments({ enabled: true });
+    const totalLevels = await Challenge.getNumberOfLevels();
     
     const progressData = {
       currentLevel: progress.currentLevel,
@@ -71,9 +61,7 @@ exports.getMyProgress = async (req, res, next) => {
  */
 exports.getAllProgress = async (req, res, next) => {
   try {
-    const progress = await Progress.find()
-      .populate('userId', 'name email')
-      .sort({ lastUpdated: -1 });
+    const progress = await Progress.find().sort({ lastUpdated: -1 });
     
     res.status(200).json({
       status: 'success',
@@ -87,7 +75,7 @@ exports.getAllProgress = async (req, res, next) => {
 
 /**
  * Get progress statistics (admin only)
- * @route GET /api/progress/stats/overview
+ * @route GET /api/progress/stats
  * @access Private (Admin)
  */
 exports.getProgressStats = async (req, res, next) => {
@@ -115,11 +103,6 @@ exports.getProgressStats = async (req, res, next) => {
     
     // Get level completion stats
     const levelStats = await Progress.aggregate([
-      {
-        $project: {
-          levelStatus: { $objectToArray: "$levelStatus" }
-        }
-      },
       { $unwind: '$levelStatus' },
       { $match: { 'levelStatus.v': true } },
       { $group: { _id: '$levelStatus.k', count: { $sum: 1 } } },
@@ -194,22 +177,18 @@ exports.getUserProgress = async (req, res, next) => {
     
     // Get level attempt details
     const levelAttempts = {};
-    if (progress.flagsAttempted && progress.flagsAttempted instanceof Map) {
-      progress.flagsAttempted.forEach((attempts, level) => {
-        levelAttempts[level] = {
-          attempts: attempts.length,
-          flags: attempts
-        };
-      });
-    }
+    progress.flagsAttempted.forEach((attempts, level) => {
+      levelAttempts[level] = {
+        attempts: attempts.length,
+        flags: attempts
+      };
+    });
     
     // Get level hint usage
     const levelHints = {};
-    if (progress.hintsUsed && progress.hintsUsed instanceof Map) {
-      progress.hintsUsed.forEach((used, level) => {
-        levelHints[level] = used;
-      });
-    }
+    progress.hintsUsed.forEach((used, level) => {
+      levelHints[level] = used;
+    });
     
     res.status(200).json({
       status: 'success',
@@ -356,5 +335,3 @@ exports.deleteUserProgress = async (req, res, next) => {
     next(error);
   }
 };
-
-module.exports = exports;

@@ -113,20 +113,11 @@ exports.deleteChallenge = async (req, res, next) => {
 // Get current user's challenge
 exports.getCurrentChallenge = async (req, res, next) => {
   try {
-    // Get user's progress or create if doesn't exist
-    let progress = await Progress.findOne({ userId: req.user.id });
+    // Get user's progress
+    const progress = await Progress.findOne({ userId: req.user.id });
     
     if (!progress) {
-      console.log('No progress found for user in getCurrentChallenge:', req.user.id, '- creating new progress');
-      
-      try {
-        // Use the static method that gets time limit from settings
-        progress = await Progress.createWithTimeLimit(req.user.id);
-        console.log('Progress created successfully in getCurrentChallenge for user:', req.user.id);
-      } catch (createError) {
-        console.error('Error creating progress in getCurrentChallenge:', createError);
-        throw new AppError('Failed to initialize user progress', 500);
-      }
+      throw new AppError('User progress not found', 404);
     }
     
     // Check if completed
@@ -172,11 +163,8 @@ exports.getCurrentChallenge = async (req, res, next) => {
     
     // Get attempt counts, hints used, etc.
     const currentLevel = progress.currentLevel.toString();
-    const attemptCount = progress.attemptCounts?.get(currentLevel) || 0;
-    const hintUsed = progress.hintsUsed?.get(currentLevel) || false;
-    
-    // Get total number of challenges
-    const totalLevels = await Challenge.getNumberOfLevels();
+    const attemptCount = progress.attemptCounts.get(currentLevel) || 0;
+    const hintUsed = progress.hintsUsed.get(currentLevel) || false;
     
     // Send modified challenge data without the flag
     const challengeData = {
@@ -186,8 +174,7 @@ exports.getCurrentChallenge = async (req, res, next) => {
       hint: hintUsed ? challenge.hint : null,
       attemptCount,
       hintUsed,
-      timeRemaining,
-      totalLevels
+      timeRemaining
     };
     
     res.status(200).json({
@@ -209,19 +196,10 @@ exports.submitFlag = async (req, res, next) => {
     }
     
     // Get user's progress
-    let progress = await Progress.findOne({ userId: req.user.id });
+    const progress = await Progress.findOne({ userId: req.user.id });
     
     if (!progress) {
-      console.log('No progress found for user in submitFlag:', req.user.id, '- creating new progress');
-      
-      try {
-        // Use the static method that gets time limit from settings
-        progress = await Progress.createWithTimeLimit(req.user.id);
-        console.log('Progress created successfully in submitFlag for user:', req.user.id);
-      } catch (createError) {
-        console.error('Error creating progress in submitFlag:', createError);
-        throw new AppError('Failed to initialize user progress', 500);
-      }
+      throw new AppError('User progress not found', 404);
     }
     
     // Check if time expired
@@ -241,28 +219,15 @@ exports.submitFlag = async (req, res, next) => {
     
     const currentLevel = progress.currentLevel.toString();
     
-    // Initialize Maps if they don't exist
-    if (!progress.flagsAttempted || !(progress.flagsAttempted instanceof Map)) {
-      progress.flagsAttempted = new Map();
-    }
-    if (!progress.attemptCounts || !(progress.attemptCounts instanceof Map)) {
-      progress.attemptCounts = new Map();
-    }
-    if (!progress.levelStatus || !(progress.levelStatus instanceof Map)) {
-      progress.levelStatus = new Map();
-    }
-    
     // Record the flag attempt
     if (!progress.flagsAttempted.has(currentLevel)) {
       progress.flagsAttempted.set(currentLevel, []);
     }
-    const attempts = progress.flagsAttempted.get(currentLevel);
-    attempts.push({
+    progress.flagsAttempted.get(currentLevel).push({
       flag,
       timestamp: new Date(),
       correct: flag.trim() === challenge.flag.trim()
     });
-    progress.flagsAttempted.set(currentLevel, attempts);
     
     // Update attempt count
     const currentAttempts = progress.attemptCounts.get(currentLevel) || 0;
@@ -324,19 +289,10 @@ exports.submitFlag = async (req, res, next) => {
 exports.getHint = async (req, res, next) => {
   try {
     // Get user's progress
-    let progress = await Progress.findOne({ userId: req.user.id });
+    const progress = await Progress.findOne({ userId: req.user.id });
     
     if (!progress) {
-      console.log('No progress found for user in getHint:', req.user.id, '- creating new progress');
-      
-      try {
-        // Use the static method that gets time limit from settings
-        progress = await Progress.createWithTimeLimit(req.user.id);
-        console.log('Progress created successfully in getHint for user:', req.user.id);
-      } catch (createError) {
-        console.error('Error creating progress in getHint:', createError);
-        throw new AppError('Failed to initialize user progress', 500);
-      }
+      throw new AppError('User progress not found', 404);
     }
     
     // Check if time expired
@@ -356,11 +312,6 @@ exports.getHint = async (req, res, next) => {
     
     const currentLevel = progress.currentLevel.toString();
     
-    // Initialize hintsUsed Map if it doesn't exist
-    if (!progress.hintsUsed || !(progress.hintsUsed instanceof Map)) {
-      progress.hintsUsed = new Map();
-    }
-    
     // Mark hint as used
     progress.hintsUsed.set(currentLevel, true);
     await progress.save();
@@ -374,5 +325,3 @@ exports.getHint = async (req, res, next) => {
     next(error);
   }
 };
-
-module.exports = exports;
