@@ -12,10 +12,12 @@ router.use(protect);
 router.get('/current', challengeController.getCurrentChallenge);
 router.post('/submit-flag', challengeController.submitFlag);
 router.post('/request-hint', challengeController.requestHint);
+router.get('/user-results', challengeController.getUserResults);
 
 // Admin monitoring routes
 router.get('/admin/live-progress', restrictToAdmin, challengeController.getLiveProgress);
 router.get('/admin/all', restrictToAdmin, challengeController.getAdminChallenges);
+router.post('/admin/set-global-time', restrictToAdmin, challengeController.setGlobalTimeLimit);
 router.get('/stats', challengeController.getChallengeStats);
 
 // User routes (approved users only)
