@@ -2,10 +2,12 @@ const Challenge = require('../models/Challenge');
 const Progress = require('../models/Progress');
 const { AppError } = require('../../utils/errorHandler');
 
-// Get all challenges (admin only)
+// Get all challenges (for approved users)
 exports.getAllChallenges = async (req, res, next) => {
   try {
-    const challenges = await Challenge.find().sort({ levelNumber: 1 });
+    const challenges = await Challenge.find({ isActive: true })
+      .select('-content.hints') // Don't send hints initially
+      .sort({ createdAt: -1 });
     
     res.status(200).json({
       status: 'success',
@@ -17,28 +19,41 @@ exports.getAllChallenges = async (req, res, next) => {
   }
 };
 
-// Create a new challenge (admin only)
-exports.createChallenge = async (req, res, next) => {
+// Get challenge by ID
+exports.getChallenge = async (req, res, next) => {
   try {
-    const { levelNumber, title, description, hint, flag, enabled } = req.body;
+    const challenge = await Challenge.findById(req.params.id);
     
-    // Check if level number already exists
-    const existingChallenge = await Challenge.findOne({ levelNumber });
-    if (existingChallenge) {
-      throw new AppError('A challenge with this level number already exists', 400);
+    if (!challenge) {
+      throw new AppError('Challenge not found', 404);
+    }
+
+    if (!challenge.isActive && !req.user.isAdmin) {
+      throw new AppError('Challenge is not available', 403);
     }
     
-    const challenge = await Challenge.create({
-      levelNumber,
-      title,
-      description,
-      hint,
-      flag,
-      enabled: enabled !== undefined ? enabled : true
+    res.status(200).json({
+      status: 'success',
+      challenge
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Create challenge (admin only)
+exports.createChallenge = async (req, res, next) => {
+  try {
+    const challengeData = {
+      ...req.body,
+      createdBy: req.user.id
+    };
+
+    const challenge = await Challenge.create(challengeData);
     
     res.status(201).json({
       status: 'success',
+      message: 'Challenge created successfully',
       challenge
     });
   } catch (error) {
@@ -46,45 +61,22 @@ exports.createChallenge = async (req, res, next) => {
   }
 };
 
-// Update a challenge (admin only)
+// Update challenge (admin only)
 exports.updateChallenge = async (req, res, next) => {
   try {
-    const { levelNumber, title, description, hint, flag, enabled } = req.body;
-    
-    // If updating level number, check if it already exists (excluding current challenge)
-    if (levelNumber) {
-      const existingChallenge = await Challenge.findOne({ 
-        levelNumber, 
-        _id: { $ne: req.params.id } 
-      });
-      if (existingChallenge) {
-        throw new AppError('A challenge with this level number already exists', 400);
-      }
-    }
-    
     const challenge = await Challenge.findByIdAndUpdate(
       req.params.id,
-      {
-        levelNumber,
-        title,
-        description,
-        hint,
-        flag,
-        enabled,
-        updatedAt: Date.now()
-      },
-      { 
-        new: true,
-        runValidators: true
-      }
+      req.body,
+      { new: true, runValidators: true }
     );
-    
+
     if (!challenge) {
       throw new AppError('Challenge not found', 404);
     }
     
     res.status(200).json({
       status: 'success',
+      message: 'Challenge updated successfully',
       challenge
     });
   } catch (error) {
@@ -92,234 +84,58 @@ exports.updateChallenge = async (req, res, next) => {
   }
 };
 
-// Delete a challenge (admin only)
+// Delete challenge (admin only)
 exports.deleteChallenge = async (req, res, next) => {
   try {
     const challenge = await Challenge.findByIdAndDelete(req.params.id);
-    
+
     if (!challenge) {
       throw new AppError('Challenge not found', 404);
     }
+
+    // Also delete related progress
+    await Progress.deleteMany({ challengeId: req.params.id });
     
     res.status(204).json({
       status: 'success',
-      data: null
+      message: 'Challenge deleted successfully'
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Get current user's challenge
-exports.getCurrentChallenge = async (req, res, next) => {
+// Get challenges for admin
+exports.getAdminChallenges = async (req, res, next) => {
   try {
-    // Get user's progress
-    const progress = await Progress.findOne({ userId: req.user.id });
-    
-    if (!progress) {
-      throw new AppError('User progress not found', 404);
-    }
-    
-    // Check if completed
-    if (progress.completed) {
-      return res.status(200).json({
-        status: 'success',
-        message: 'All challenges completed',
-        completed: true,
-        timeRemaining: progress.timeRemaining
-      });
-    }
-    
-    // Check if time expired
-    if (progress.timeRemaining <= 0) {
-      return res.status(200).json({
-        status: 'success',
-        message: 'Time expired',
-        timeExpired: true,
-        timeRemaining: 0
-      });
-    }
-    
-    // Get current level challenge
-    const challenge = await Challenge.findOne({ 
-      levelNumber: progress.currentLevel,
-      enabled: true
-    });
-    
-    if (!challenge) {
-      throw new AppError('Challenge not found', 404);
-    }
-    
-    // Calculate remaining time
-    const now = new Date();
-    const startTime = new Date(progress.startTime);
-    const totalTimeLimit = progress.totalTimeLimit || 3600;
-    const elapsedSeconds = Math.floor((now - startTime) / 1000);
-    const timeRemaining = Math.max(totalTimeLimit - elapsedSeconds, 0);
-    
-    // Update time remaining
-    progress.timeRemaining = timeRemaining;
-    await progress.save();
-    
-    // Get attempt counts, hints used, etc.
-    const currentLevel = progress.currentLevel.toString();
-    const attemptCount = progress.attemptCounts.get(currentLevel) || 0;
-    const hintUsed = progress.hintsUsed.get(currentLevel) || false;
-    
-    // Send modified challenge data without the flag
-    const challengeData = {
-      levelNumber: challenge.levelNumber,
-      title: challenge.title,
-      description: challenge.description,
-      hint: hintUsed ? challenge.hint : null,
-      attemptCount,
-      hintUsed,
-      timeRemaining
-    };
+    const challenges = await Challenge.find({})
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
     
     res.status(200).json({
       status: 'success',
-      challenge: challengeData
+      results: challenges.length,
+      challenges
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Submit flag for current challenge
-exports.submitFlag = async (req, res, next) => {
+// Get challenge statistics
+exports.getChallengeStats = async (req, res, next) => {
   try {
-    const { flag } = req.body;
-    
-    if (!flag) {
-      throw new AppError('Flag is required', 400);
-    }
-    
-    // Get user's progress
-    const progress = await Progress.findOne({ userId: req.user.id });
-    
-    if (!progress) {
-      throw new AppError('User progress not found', 404);
-    }
-    
-    // Check if time expired
-    if (progress.timeRemaining <= 0) {
-      throw new AppError('Time has expired', 400);
-    }
-    
-    // Get current challenge
-    const challenge = await Challenge.findOne({ 
-      levelNumber: progress.currentLevel,
-      enabled: true
-    });
-    
-    if (!challenge) {
-      throw new AppError('Challenge not found', 404);
-    }
-    
-    const currentLevel = progress.currentLevel.toString();
-    
-    // Record the flag attempt
-    if (!progress.flagsAttempted.has(currentLevel)) {
-      progress.flagsAttempted.set(currentLevel, []);
-    }
-    progress.flagsAttempted.get(currentLevel).push({
-      flag,
-      timestamp: new Date(),
-      correct: flag.trim() === challenge.flag.trim()
-    });
-    
-    // Update attempt count
-    const currentAttempts = progress.attemptCounts.get(currentLevel) || 0;
-    progress.attemptCounts.set(currentLevel, currentAttempts + 1);
-    
-    // Check if flag is correct
-    if (flag.trim() === challenge.flag.trim()) {
-      // Mark level as completed
-      progress.levelStatus.set(currentLevel, true);
-      
-      // Check if this is the last level
-      const totalChallenges = await Challenge.countDocuments({ enabled: true });
-      
-      if (progress.currentLevel >= totalChallenges) {
-        // All challenges completed
-        progress.completed = true;
-        progress.completedAt = new Date();
-        
-        await progress.save();
-        
-        return res.status(200).json({
-          status: 'success',
-          message: 'Congratulations! All challenges completed!',
-          correct: true,
-          completed: true,
-          timeRemaining: progress.timeRemaining
-        });
-      } else {
-        // Move to next level
-        progress.currentLevel += 1;
-        await progress.save();
-        
-        return res.status(200).json({
-          status: 'success',
-          message: 'Correct! Moving to next level.',
-          correct: true,
-          nextLevel: progress.currentLevel,
-          timeRemaining: progress.timeRemaining
-        });
+    const totalChallenges = await Challenge.countDocuments();
+    const activeChallenges = await Challenge.countDocuments({ isActive: true });
+    const inactiveChallenges = totalChallenges - activeChallenges;
+
+    res.status(200).json({
+      status: 'success',
+      stats: {
+        total: totalChallenges,
+        active: activeChallenges,
+        inactive: inactiveChallenges
       }
-    } else {
-      // Wrong flag
-      await progress.save();
-      
-      return res.status(200).json({
-        status: 'success',
-        message: 'Incorrect flag. Try again!',
-        correct: false,
-        attempts: progress.attemptCounts.get(currentLevel),
-        timeRemaining: progress.timeRemaining
-      });
-    }
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Get hint for current challenge
-exports.getHint = async (req, res, next) => {
-  try {
-    // Get user's progress
-    const progress = await Progress.findOne({ userId: req.user.id });
-    
-    if (!progress) {
-      throw new AppError('User progress not found', 404);
-    }
-    
-    // Check if time expired
-    if (progress.timeRemaining <= 0) {
-      throw new AppError('Time has expired', 400);
-    }
-    
-    // Get current challenge
-    const challenge = await Challenge.findOne({ 
-      levelNumber: progress.currentLevel,
-      enabled: true
-    });
-    
-    if (!challenge) {
-      throw new AppError('Challenge not found', 404);
-    }
-    
-    const currentLevel = progress.currentLevel.toString();
-    
-    // Mark hint as used
-    progress.hintsUsed.set(currentLevel, true);
-    await progress.save();
-    
-    res.status(200).json({
-      status: 'success',
-      hint: challenge.hint,
-      timeRemaining: progress.timeRemaining
     });
   } catch (error) {
     next(error);

@@ -5,44 +5,66 @@ const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Name is required'],
-    trim: true
+    trim: true,
+    maxlength: 50
   },
   email: {
     type: String,
     required: [true, 'Email is required'],
     unique: true,
-    trim: true,
     lowercase: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email address']
+    trim: true
   },
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters']
+    minlength: 6
   },
   phone: {
     type: String,
-    default: ''
+    required: [true, 'Phone number is required'],
+    trim: true
   },
   education: {
     type: String,
-    default: ''
+    required: [true, 'Education is required'],
+    trim: true
   },
   institution: {
     type: String,
-    default: ''
+    required: [true, 'Institution is required'],
+    trim: true
   },
   location: {
     type: String,
-    default: ''
+    required: [true, 'Location is required'],
+    trim: true
   },
   isAdmin: {
     type: Boolean,
     default: false
   },
-  isCloud: {
-    type: Boolean, // Ensure this is defined as Boolean, not String
-    default: false
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'suspended'],
+    default: 'pending'
+  },
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  approvedAt: {
+    type: Date
+  },
+  rejectionReason: {
+    type: String
+  },
+  profilePicture: {
+    type: String
+  },
+  bio: {
+    type: String,
+    maxlength: 500
   },
   registrationTime: {
     type: Date,
@@ -51,68 +73,20 @@ const userSchema = new mongoose.Schema({
   lastLogin: {
     type: Date
   }
+}, {
+  timestamps: true
 });
-
-// Create index for email
-userSchema.index({ email: 1 }, { unique: true });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  // Only hash the password if it's modified (or new)
-  if (!this.isModified('password')) {
-    return next();
-  }
-  
-  try {
-    console.log('Hashing password for user:', this.email);
-    // Generate salt
-    const salt = await bcrypt.genSalt(10);
-    // Hash password
-    this.password = await bcrypt.hash(this.password, salt);
-    console.log('Password hashed successfully');
-    next();
-  } catch (error) {
-    console.error('Error hashing password:', error);
-    next(error);
-  }
-});
-
-// Convert string values to proper booleans before saving
-userSchema.pre('save', function(next) {
-  // Ensure isAdmin is always a boolean
-  if (this.isAdmin === 'true' || this.isAdmin === '1' || this.isAdmin === 1) {
-    this.isAdmin = true;
-  } else if (this.isAdmin === 'false' || this.isAdmin === '0' || this.isAdmin === 0) {
-    this.isAdmin = false;
-  }
-  
-  // Ensure isCloud is always a boolean
-  if (this.isCloud === 'true' || this.isCloud === '1' || this.isCloud === 1) {
-    this.isCloud = true;
-  } else if (this.isCloud === 'false' || this.isCloud === '0' || this.isCloud === 0) {
-    this.isCloud = false;
-  }
-  
-  console.log('Normalized user permissions:', {
-    isAdmin: this.isAdmin,
-    isCloud: this.isCloud
-  });
-  
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
-// Method to compare password for login
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  try {
-    return await bcrypt.compare(candidatePassword, this.password);
-  } catch (error) {
-    console.error('Error comparing passwords:', error);
-    throw error;
-  }
+// Compare password method
+userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
+  return await bcrypt.compare(candidatePassword, userPassword);
 };
 
-// Create the model
-const User = mongoose.model('User', userSchema);
-
-// Export the model
-module.exports = User;
+module.exports = mongoose.model('User', userSchema);

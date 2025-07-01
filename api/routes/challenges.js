@@ -3,25 +3,18 @@ const router = express.Router();
 const challengeController = require('../controllers/challengeController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Get all challenges (admin only)
-router.get('/', protect, restrictToAdmin, challengeController.getAllChallenges);
+// Protect all routes
+router.use(protect);
 
-// Get current user's challenge
-router.get('/current', protect, challengeController.getCurrentChallenge);
+// User routes (approved users only)
+router.get('/', challengeController.getAllChallenges);
+router.get('/stats', challengeController.getChallengeStats);
+router.get('/:id', challengeController.getChallenge);
 
-// Create new challenge (admin only)
-router.post('/', protect, restrictToAdmin, challengeController.createChallenge);
-
-// Update challenge (admin only)
-router.patch('/:id', protect, restrictToAdmin, challengeController.updateChallenge);
-
-// Delete challenge (admin only)
-router.delete('/:id', protect, restrictToAdmin, challengeController.deleteChallenge);
-
-// Submit flag for current challenge
-router.post('/submit', protect, challengeController.submitFlag);
-
-// Get hint for current challenge
-router.get('/hint', protect, challengeController.getHint);
+// Admin routes
+router.get('/admin/all', restrictToAdmin, challengeController.getAdminChallenges);
+router.post('/', restrictToAdmin, challengeController.createChallenge);
+router.patch('/:id', restrictToAdmin, challengeController.updateChallenge);
+router.delete('/:id', restrictToAdmin, challengeController.deleteChallenge);
 
 module.exports = router;
