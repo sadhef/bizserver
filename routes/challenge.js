@@ -11,7 +11,7 @@ const {
 
 const router = express.Router();
 
-// Start challenge
+// Start challenge - UPDATED to prevent restart
 router.post('/start', authenticateApprovedUser, checkChallengeActive, async (req, res) => {
   try {
     const user = req.user;
@@ -19,13 +19,32 @@ router.post('/start', authenticateApprovedUser, checkChallengeActive, async (req
 
     console.log('Starting challenge for user:', { userId: user._id, username: user.username });
 
-    // Check if user has already started
+    // NEW: Check if user has already completed or ended the challenge
+    if (user.challengeStartTime && !user.isActive && user.challengeEndTime) {
+      const isTimeExpired = user.isTimeExpired();
+      const hasCompleted = user.completedLevels.length >= config.maxLevels;
+      
+      if (isTimeExpired || hasCompleted) {
+        return res.status(403).json({
+          error: 'Challenge already completed or expired. Contact admin to reset your progress.',
+          code: 'CHALLENGE_ALREADY_ENDED',
+          canRestart: false,
+          reason: hasCompleted ? 'completed' : 'expired',
+          completedLevels: user.completedLevels.length,
+          maxLevels: config.maxLevels,
+          challengeEndTime: user.challengeEndTime
+        });
+      }
+    }
+
+    // Check if user has already started and is still active
     if (user.challengeStartTime && user.isActive) {
       return res.json({
         message: 'Challenge already started',
         challengeStartTime: user.challengeStartTime,
         challengeEndTime: user.challengeEndTime,
-        timeRemaining: user.getTimeRemaining()
+        timeRemaining: user.getTimeRemaining(),
+        alreadyStarted: true
       });
     }
 
@@ -127,7 +146,7 @@ router.get('/current', authenticateApprovedUser, checkTimeLimit, async (req, res
   }
 });
 
-// Submit flag - COMPLETELY FIXED
+// Submit flag - UPDATED with enhanced completion handling
 router.post('/submit', 
   authenticateApprovedUser, 
   checkChallengeActive, 
@@ -208,11 +227,12 @@ router.post('/submit',
         const totalCompletedLevels = user.completedLevels.length;
         
         if (totalCompletedLevels >= config.maxLevels) {
-          // All levels completed
+          // All levels completed - END CHALLENGE PERMANENTLY
           user.isActive = false;
+          user.challengeCompletionTime = new Date(); // NEW: Track completion time
           await user.save();
 
-          console.log('=== ALL CHALLENGES COMPLETED ===');
+          console.log('=== ALL CHALLENGES COMPLETED - CHALLENGE ENDED ===');
 
           return res.json({
             success: true,
@@ -222,7 +242,8 @@ router.post('/submit',
             totalAttempts: user.totalAttempts,
             timeRemaining,
             finalLevel: currentLevel,
-            allChallengesComplete: true
+            allChallengesComplete: true,
+            challengeEnded: true // NEW: Indicate challenge is permanently ended
           });
         }
 
@@ -262,11 +283,12 @@ router.post('/submit',
             levelProgression: true
           });
         } else {
-          // No next challenge found but not all levels completed
+          // No next challenge found but not all levels completed - END CHALLENGE
           user.isActive = false;
+          user.challengeCompletionTime = new Date(); // NEW: Track completion time
           await user.save();
 
-          console.log('=== NO MORE CHALLENGES AVAILABLE ===');
+          console.log('=== NO MORE CHALLENGES AVAILABLE - CHALLENGE ENDED ===');
 
           return res.json({
             success: true,
@@ -276,7 +298,8 @@ router.post('/submit',
             totalAttempts: user.totalAttempts,
             timeRemaining,
             finalLevel: currentLevel,
-            allChallengesComplete: true
+            allChallengesComplete: true,
+            challengeEnded: true // NEW: Indicate challenge is permanently ended
           });
         }
       } else {
@@ -304,7 +327,7 @@ router.post('/submit',
   }
 );
 
-// Get challenge status
+// Get challenge status - UPDATED with restart prevention info
 router.get('/status', authenticateApprovedUser, async (req, res) => {
   try {
     const user = req.user;
@@ -312,6 +335,7 @@ router.get('/status', authenticateApprovedUser, async (req, res) => {
     
     const timeRemaining = user.getTimeRemaining();
     const isTimeExpired = user.isTimeExpired();
+    const hasCompleted = user.completedLevels.length >= config.maxLevels;
 
     // Auto-deactivate if time expired
     if (isTimeExpired && user.isActive) {
@@ -319,6 +343,10 @@ router.get('/status', authenticateApprovedUser, async (req, res) => {
       await user.save();
     }
 
+    // NEW: Determine if user can restart
+    const hasEverStarted = !!user.challengeStartTime;
+    const canRestart = !hasEverStarted || (!hasCompleted && !isTimeExpired && user.isActive);
+    
     res.json({
       isApproved: user.isApproved,
       isActive: user.isActive && !isTimeExpired,
@@ -326,18 +354,66 @@ router.get('/status', authenticateApprovedUser, async (req, res) => {
       currentLevel: user.currentLevel,
       completedLevels: user.completedLevels,
       timeRemaining,
-      hasStarted: !!user.challengeStartTime,
+      hasStarted: hasEverStarted,
       totalAttempts: user.totalAttempts,
       maxAttempts: config.maxAttempts,
       challengeStartTime: user.challengeStartTime,
       challengeEndTime: user.challengeEndTime,
-      isCompleted: user.completedLevels.length >= config.maxLevels
+      isCompleted: hasCompleted,
+      isExpired: isTimeExpired,
+      canRestart: canRestart, // NEW: Can user restart challenge
+      challengeCompletionTime: user.challengeCompletionTime, // NEW: When challenge was completed
+      endReason: hasCompleted ? 'completed' : isTimeExpired ? 'expired' : null // NEW: Why challenge ended
     });
   } catch (error) {
     console.error('Get status error:', error);
     res.status(500).json({ 
       error: 'Server error fetching status',
       code: 'GET_STATUS_ERROR'
+    });
+  }
+});
+
+// NEW: Check if user can start challenge
+router.get('/can-start', authenticateApprovedUser, async (req, res) => {
+  try {
+    const user = req.user;
+    const config = await Config.getConfig();
+    
+    const hasEverStarted = !!user.challengeStartTime;
+    const isTimeExpired = user.isTimeExpired();
+    const hasCompleted = user.completedLevels.length >= config.maxLevels;
+    
+    let canStart = true;
+    let reason = null;
+    
+    if (hasEverStarted) {
+      if (hasCompleted) {
+        canStart = false;
+        reason = 'Challenge already completed. Contact admin to reset progress.';
+      } else if (isTimeExpired && !user.isActive) {
+        canStart = false;
+        reason = 'Challenge time expired. Contact admin to reset progress.';
+      } else if (user.isActive) {
+        canStart = false;
+        reason = 'Challenge already in progress.';
+      }
+    }
+    
+    res.json({
+      canStart,
+      reason,
+      hasStarted: hasEverStarted,
+      isCompleted: hasCompleted,
+      isExpired: isTimeExpired,
+      isActive: user.isActive,
+      challengeActive: config.isChallengeTimeActive()
+    });
+  } catch (error) {
+    console.error('Check can start error:', error);
+    res.status(500).json({ 
+      error: 'Server error checking start eligibility',
+      code: 'CHECK_START_ERROR'
     });
   }
 });
@@ -445,6 +521,57 @@ router.get('/info', async (req, res) => {
     res.status(500).json({ 
       error: 'Server error fetching challenge info',
       code: 'GET_CHALLENGE_INFO_ERROR'
+    });
+  }
+});
+
+// Get leaderboard
+router.get('/leaderboard', authenticateApprovedUser, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    const leaderboard = await User.aggregate([
+      {
+        $match: {
+          isAdmin: false,
+          isApproved: true,
+          challengeStartTime: { $exists: true }
+        }
+      },
+      {
+        $addFields: {
+          completedCount: { $size: '$completedLevels' }
+        }
+      },
+      {
+        $sort: {
+          completedCount: -1,
+          totalAttempts: 1,
+          challengeStartTime: 1
+        }
+      },
+      {
+        $limit: parseInt(limit)
+      },
+      {
+        $project: {
+          username: 1,
+          completedCount: 1,
+          totalAttempts: 1,
+          challengeStartTime: 1,
+          challengeCompletionTime: 1
+        }
+      }
+    ]);
+
+    res.json({
+      leaderboard
+    });
+  } catch (error) {
+    console.error('Get leaderboard error:', error);
+    res.status(500).json({ 
+      error: 'Server error fetching leaderboard',
+      code: 'GET_LEADERBOARD_ERROR'
     });
   }
 });
