@@ -17,6 +17,8 @@ router.post('/start', authenticateApprovedUser, checkChallengeActive, async (req
     const user = req.user;
     const config = req.config;
 
+    console.log('Starting challenge for user:', { userId: user._id, username: user.username });
+
     // Check if user has already started
     if (user.challengeStartTime && user.isActive) {
       return res.json({
@@ -34,12 +36,19 @@ router.post('/start', authenticateApprovedUser, checkChallengeActive, async (req
     user.challengeStartTime = now;
     user.challengeEndTime = endTime;
     user.isActive = true;
-    user.currentLevel = 1;
+    user.currentLevel = 1; // Always start at level 1
     user.completedLevels = [];
     user.submissions = [];
     user.totalAttempts = 0;
 
     await user.save();
+
+    console.log('Challenge started successfully:', { 
+      userId: user._id, 
+      startTime: now, 
+      endTime: endTime, 
+      timeLimit: config.totalTimeLimit 
+    });
 
     res.json({
       message: 'Challenge started successfully',
@@ -62,14 +71,32 @@ router.get('/current', authenticateApprovedUser, checkTimeLimit, async (req, res
   try {
     const user = req.user;
 
+    console.log('Getting current challenge for user:', { 
+      userId: user._id, 
+      currentLevel: user.currentLevel, 
+      isActive: user.isActive 
+    });
+
+    // Check if challenge is started
     if (!user.isActive || !user.challengeStartTime) {
       return res.status(400).json({ 
         error: 'Challenge not started',
-        code: 'CHALLENGE_NOT_STARTED'
+        code: 'CHALLENGE_NOT_STARTED',
+        hasStarted: false
       });
     }
 
-    const challenge = await Challenge.getActiveByLevel(user.currentLevel);
+    // Get the challenge for current level
+    const challenge = await Challenge.findOne({ 
+      level: user.currentLevel, 
+      isActive: true 
+    });
+
+    console.log('Found challenge:', { 
+      challengeExists: !!challenge, 
+      level: challenge?.level, 
+      title: challenge?.title 
+    });
 
     if (!challenge) {
       return res.status(404).json({ 
@@ -100,7 +127,7 @@ router.get('/current', authenticateApprovedUser, checkTimeLimit, async (req, res
   }
 });
 
-// Submit flag
+// Submit flag - COMPLETELY FIXED
 router.post('/submit', 
   authenticateApprovedUser, 
   checkChallengeActive, 
@@ -111,6 +138,11 @@ router.post('/submit',
       const { flag } = req.body;
       const user = req.user;
       const config = req.config;
+
+      console.log('=== FLAG SUBMISSION START ===');
+      console.log('User:', { id: user._id, username: user.username, currentLevel: user.currentLevel });
+      console.log('Config:', { maxLevels: config.maxLevels });
+      console.log('Submitted flag:', flag);
 
       // Validation
       if (!flag || typeof flag !== 'string') {
@@ -127,33 +159,25 @@ router.post('/submit',
         });
       }
 
-      // Check max attempts if configured
-      if (config.maxAttempts !== -1 && user.totalAttempts >= config.maxAttempts) {
-        return res.status(403).json({ 
-          error: 'Maximum attempts reached',
-          code: 'MAX_ATTEMPTS_REACHED'
-        });
-      }
-
-      const challenge = await Challenge.getActiveByLevel(user.currentLevel);
+      // Get current challenge
+      const challenge = await Challenge.findOne({ 
+        level: user.currentLevel, 
+        isActive: true 
+      });
 
       if (!challenge) {
         return res.status(404).json({ 
-          error: 'Challenge not found',
+          error: 'Challenge not found for current level',
           code: 'CHALLENGE_NOT_FOUND'
         });
       }
 
-      // Check if user can access this level
-      if (!user.canAccessLevel(user.currentLevel)) {
-        return res.status(403).json({ 
-          error: 'Must complete previous levels first',
-          code: 'LEVEL_LOCKED'
-        });
-      }
+      console.log('Current challenge:', { level: challenge.level, title: challenge.title, correctFlag: challenge.flag });
 
       const isCorrect = challenge.validateFlag(flag);
       const timeRemaining = user.getTimeRemaining();
+
+      console.log('Flag validation:', { isCorrect });
 
       // Record submission
       user.submissions.push({
@@ -165,61 +189,109 @@ router.post('/submit',
       user.totalAttempts += 1;
 
       if (isCorrect) {
-        // Correct flag submitted
+        console.log('=== CORRECT FLAG SUBMITTED ===');
+        
         const currentLevel = user.currentLevel;
         
-        // Add current level to completed levels
+        // Add current level to completed levels if not already there
         if (!user.completedLevels.includes(currentLevel)) {
           user.completedLevels.push(currentLevel);
         }
 
-        // Increment solve count for challenge
-        await challenge.incrementSolveCount();
+        console.log('Level completed:', { 
+          currentLevel, 
+          completedLevels: user.completedLevels,
+          maxLevels: config.maxLevels
+        });
 
-        // Check if there are more levels
-        const nextLevel = currentLevel + 1;
-        const nextChallenge = await Challenge.getActiveByLevel(nextLevel);
-
-        if (nextChallenge && nextLevel <= config.maxLevels) {
-          // Move to next level
-          user.currentLevel = nextLevel;
-          await user.save();
-
-          res.json({
-            success: true,
-            message: `Correct! Moving to Level ${nextLevel}`,
-            currentLevel: nextLevel,
-            completedLevels: user.completedLevels,
-            timeRemaining,
-            hasNextLevel: true,
-            totalAttempts: user.totalAttempts
-          });
-        } else {
-          // Challenge completed
+        // Check if user has completed ALL levels
+        const totalCompletedLevels = user.completedLevels.length;
+        
+        if (totalCompletedLevels >= config.maxLevels) {
+          // All levels completed
           user.isActive = false;
           await user.save();
 
-          res.json({
+          console.log('=== ALL CHALLENGES COMPLETED ===');
+
+          return res.json({
             success: true,
             message: 'Congratulations! You have completed all challenges!',
             completed: true,
             completedLevels: user.completedLevels,
             totalAttempts: user.totalAttempts,
             timeRemaining,
-            finalLevel: currentLevel
+            finalLevel: currentLevel,
+            allChallengesComplete: true
+          });
+        }
+
+        // Not all levels completed, check for next level
+        const nextLevel = currentLevel + 1;
+        
+        // Check if next challenge exists
+        const nextChallenge = await Challenge.findOne({ 
+          level: nextLevel, 
+          isActive: true 
+        });
+
+        console.log('Next level check:', { 
+          nextLevel, 
+          nextChallengeExists: !!nextChallenge,
+          totalCompleted: totalCompletedLevels,
+          maxLevels: config.maxLevels
+        });
+
+        if (nextChallenge && nextLevel <= config.maxLevels) {
+          // Move to next level
+          user.currentLevel = nextLevel;
+          await user.save();
+
+          console.log('=== MOVED TO NEXT LEVEL ===');
+          console.log('New level:', user.currentLevel);
+
+          return res.json({
+            success: true,
+            message: `Correct! Moving to Level ${nextLevel}`,
+            currentLevel: nextLevel,
+            completedLevels: user.completedLevels,
+            timeRemaining,
+            hasNextLevel: true,
+            totalAttempts: user.totalAttempts,
+            moveToNextLevel: true,
+            levelProgression: true
+          });
+        } else {
+          // No next challenge found but not all levels completed
+          user.isActive = false;
+          await user.save();
+
+          console.log('=== NO MORE CHALLENGES AVAILABLE ===');
+
+          return res.json({
+            success: true,
+            message: 'Congratulations! You have completed all available challenges!',
+            completed: true,
+            completedLevels: user.completedLevels,
+            totalAttempts: user.totalAttempts,
+            timeRemaining,
+            finalLevel: currentLevel,
+            allChallengesComplete: true
           });
         }
       } else {
-        // Incorrect flag
+        // Incorrect flag - stay on same level
         await user.save();
 
-        res.json({
+        console.log('=== INCORRECT FLAG ===');
+
+        return res.json({
           success: false,
           message: 'Incorrect flag. Try again!',
           currentLevel: user.currentLevel,
           timeRemaining,
           totalAttempts: user.totalAttempts,
-          remainingAttempts: config.maxAttempts === -1 ? -1 : (config.maxAttempts - user.totalAttempts)
+          stayOnLevel: true
         });
       }
     } catch (error) {
@@ -290,7 +362,10 @@ router.get('/hint', authenticateApprovedUser, checkTimeLimit, async (req, res) =
       });
     }
 
-    const challenge = await Challenge.getActiveByLevel(user.currentLevel);
+    const challenge = await Challenge.findOne({ 
+      level: user.currentLevel, 
+      isActive: true 
+    });
 
     if (!challenge) {
       return res.status(404).json({ 
@@ -332,8 +407,7 @@ router.get('/submissions', authenticateApprovedUser, async (req, res) => {
       submissions: submissions.map(sub => ({
         level: sub.level,
         timestamp: sub.timestamp,
-        isCorrect: sub.isCorrect,
-        // Don't include the actual flag for security
+        isCorrect: sub.isCorrect
       })),
       totalAttempts: user.totalAttempts,
       currentLevel: user.currentLevel,
@@ -344,107 +418,6 @@ router.get('/submissions', authenticateApprovedUser, async (req, res) => {
     res.status(500).json({ 
       error: 'Server error fetching submissions',
       code: 'GET_SUBMISSIONS_ERROR'
-    });
-  }
-});
-
-// Reset user's challenge (for testing or if admin allows)
-router.post('/reset', authenticateApprovedUser, async (req, res) => {
-  try {
-    const user = req.user;
-
-    // Only allow reset if challenge is not active or user is not currently active
-    if (user.isActive) {
-      return res.status(400).json({ 
-        error: 'Cannot reset while challenge is active',
-        code: 'CHALLENGE_ACTIVE'
-      });
-    }
-
-    // Reset user progress
-    user.currentLevel = 1;
-    user.completedLevels = [];
-    user.submissions = [];
-    user.totalAttempts = 0;
-    user.challengeStartTime = null;
-    user.challengeEndTime = null;
-    user.isActive = false;
-
-    await user.save();
-
-    res.json({
-      message: 'Challenge progress reset successfully',
-      user: {
-        currentLevel: user.currentLevel,
-        completedLevels: user.completedLevels,
-        totalAttempts: user.totalAttempts
-      }
-    });
-  } catch (error) {
-    console.error('Reset challenge error:', error);
-    res.status(500).json({ 
-      error: 'Server error resetting challenge',
-      code: 'RESET_CHALLENGE_ERROR'
-    });
-  }
-});
-
-// Get leaderboard
-router.get('/leaderboard', authenticateApprovedUser, async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
-
-    const leaderboard = await User.aggregate([
-      {
-        $match: {
-          isAdmin: false,
-          isApproved: true,
-          $expr: { $gt: [{ $size: '$completedLevels' }, 0] }
-        }
-      },
-      {
-        $addFields: {
-          completedCount: { $size: '$completedLevels' },
-          hasCompleted: { $gt: [{ $size: '$completedLevels' }, 0] }
-        }
-      },
-      {
-        $sort: {
-          completedCount: -1,
-          totalAttempts: 1, // Less attempts is better
-          challengeEndTime: 1 // Earlier completion is better
-        }
-      },
-      {
-        $limit: parseInt(limit)
-      },
-      {
-        $project: {
-          username: 1,
-          completedLevels: 1,
-          completedCount: 1,
-          totalAttempts: 1,
-          challengeStartTime: 1,
-          challengeEndTime: 1,
-          isActive: 1
-        }
-      }
-    ]);
-
-    res.json({
-      leaderboard,
-      currentUser: {
-        username: req.user.username,
-        completedLevels: req.user.completedLevels,
-        totalAttempts: req.user.totalAttempts,
-        currentLevel: req.user.currentLevel
-      }
-    });
-  } catch (error) {
-    console.error('Get leaderboard error:', error);
-    res.status(500).json({ 
-      error: 'Server error fetching leaderboard',
-      code: 'GET_LEADERBOARD_ERROR'
     });
   }
 });
@@ -472,86 +445,6 @@ router.get('/info', async (req, res) => {
     res.status(500).json({ 
       error: 'Server error fetching challenge info',
       code: 'GET_CHALLENGE_INFO_ERROR'
-    });
-  }
-});
-
-// Get all available levels (for navigation)
-router.get('/levels', authenticateApprovedUser, async (req, res) => {
-  try {
-    const user = req.user;
-    const config = await Config.getConfig();
-    
-    const challenges = await Challenge.find({ isActive: true })
-      .sort({ level: 1 })
-      .limit(config.maxLevels);
-
-    const levels = challenges.map(challenge => ({
-      level: challenge.level,
-      title: challenge.title,
-      difficulty: challenge.difficulty,
-      category: challenge.category,
-      points: challenge.points,
-      isCompleted: user.completedLevels.includes(challenge.level),
-      isAccessible: user.canAccessLevel(challenge.level),
-      isCurrent: user.currentLevel === challenge.level
-    }));
-
-    res.json({
-      levels,
-      currentLevel: user.currentLevel,
-      completedLevels: user.completedLevels
-    });
-  } catch (error) {
-    console.error('Get levels error:', error);
-    res.status(500).json({ 
-      error: 'Server error fetching levels',
-      code: 'GET_LEVELS_ERROR'
-    });
-  }
-});
-
-// Validate flag without submitting (for testing purposes - admin only)
-router.post('/validate', authenticateApprovedUser, async (req, res) => {
-  try {
-    // This endpoint should only be available in development or for admins
-    if (process.env.NODE_ENV === 'production' && !req.user.isAdmin) {
-      return res.status(403).json({ 
-        error: 'Validation endpoint not available in production',
-        code: 'VALIDATION_DISABLED'
-      });
-    }
-
-    const { flag, level } = req.body;
-
-    if (!flag || !level) {
-      return res.status(400).json({ 
-        error: 'Flag and level are required',
-        code: 'MISSING_PARAMETERS'
-      });
-    }
-
-    const challenge = await Challenge.getActiveByLevel(parseInt(level));
-
-    if (!challenge) {
-      return res.status(404).json({ 
-        error: 'Challenge not found',
-        code: 'CHALLENGE_NOT_FOUND'
-      });
-    }
-
-    const isValid = challenge.validateFlag(flag);
-
-    res.json({
-      valid: isValid,
-      level: challenge.level,
-      message: isValid ? 'Flag is correct' : 'Flag is incorrect'
-    });
-  } catch (error) {
-    console.error('Validate flag error:', error);
-    res.status(500).json({ 
-      error: 'Server error validating flag',
-      code: 'VALIDATE_FLAG_ERROR'
     });
   }
 });
