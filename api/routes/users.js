@@ -3,26 +3,28 @@ const router = express.Router();
 const userController = require('../controllers/userController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Protect all routes
+// Protect all routes in this router - require authentication
 router.use(protect);
 
-// User profile routes (for regular users)
-router.patch('/profile', userController.updateProfile);
-
-// Admin only routes
+// Restrict access to admin only
 router.use(restrictToAdmin);
 
-// User management routes
+// Get all users (admin only)
 router.get('/', userController.getAllUsers);
+
+// Get user stats (admin only)
 router.get('/stats', userController.getUserStats);
 
-// User approval routes
-router.patch('/:id/approve', userController.approveUser);
-router.patch('/:id/reject', userController.rejectUser);
-router.patch('/:id/suspend', userController.suspendUser);
-router.delete('/:id', userController.deleteUser);
+// Get, update or delete user by ID (admin only)
+router.route('/:id')
+  .get(userController.getUser)
+  .patch(userController.updateUser)
+  .delete(userController.deleteUser);
 
-// Get specific user
-router.get('/:id', userController.getUser);
+// Update user roles specifically (admin only)
+router.patch('/:id/roles', userController.updateUserRoles);
+
+// Create admin user (admin only)
+router.post('/admin', userController.createAdminUser);
 
 module.exports = router;

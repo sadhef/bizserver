@@ -3,37 +3,25 @@ const router = express.Router();
 const challengeController = require('../controllers/challengeController');
 const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Protect all routes
-router.use(protect);
+// Get all challenges (admin only)
+router.get('/', protect, restrictToAdmin, challengeController.getAllChallenges);
 
-// IMPORTANT: Specific routes MUST come before parameterized routes
+// Get current user's challenge
+router.get('/current', protect, challengeController.getCurrentChallenge);
 
-// CTF User routes (approved users only)
-router.get('/current', challengeController.getCurrentChallenge);
-router.post('/submit-flag', challengeController.submitFlag);
-router.post('/request-hint', challengeController.requestHint);
-router.get('/user-results', challengeController.getUserResults);
+// Create new challenge (admin only)
+router.post('/', protect, restrictToAdmin, challengeController.createChallenge);
 
-// Admin monitoring routes
-router.get('/admin/live-progress', restrictToAdmin, challengeController.getLiveProgress);
-router.get('/admin/all', restrictToAdmin, challengeController.getAdminChallenges);
-router.post('/admin/set-global-time', restrictToAdmin, challengeController.setGlobalTimeLimit);
-router.get('/stats', challengeController.getChallengeStats);
+// Update challenge (admin only)
+router.patch('/:id', protect, restrictToAdmin, challengeController.updateChallenge);
 
-// User routes (approved users only)
-router.get('/', challengeController.getAllChallenges);
+// Delete challenge (admin only)
+router.delete('/:id', protect, restrictToAdmin, challengeController.deleteChallenge);
 
-// Admin CRUD routes
-router.post('/', restrictToAdmin, challengeController.createChallenge);
+// Submit flag for current challenge
+router.post('/submit', protect, challengeController.submitFlag);
 
-// Admin progress management routes
-router.get('/progress/:userId', restrictToAdmin, challengeController.getUserProgress);
-router.patch('/progress/:userId/time-limit', restrictToAdmin, challengeController.updateUserTimeLimit);
-router.patch('/progress/:userId/reset', restrictToAdmin, challengeController.resetUserProgress);
-
-// Parameterized routes MUST come last
-router.get('/:id', challengeController.getChallenge);
-router.patch('/:id', restrictToAdmin, challengeController.updateChallenge);
-router.delete('/:id', restrictToAdmin, challengeController.deleteChallenge);
+// Get hint for current challenge
+router.get('/hint', protect, challengeController.getHint);
 
 module.exports = router;

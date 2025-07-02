@@ -1,15 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const progressController = require('../controllers/progressController');
-const { protect } = require('../middleware/auth');
+const { protect, restrictToAdmin } = require('../middleware/auth');
 
-// Protect all routes
-router.use(protect);
+// Get all progress (admin only)
+router.get('/', protect, restrictToAdmin, progressController.getAllProgress);
 
-// Progress routes
-router.get('/', progressController.getUserProgress);
-router.get('/stats', progressController.getProgressStats);
-router.post('/', progressController.createOrUpdateProgress);
-router.patch('/:challengeId', progressController.updateProgress);
+// Get current user's progress
+router.get('/me', protect, progressController.getMyProgress);
+
+// Get specific user's progress (admin only)
+router.get('/:userId', protect, restrictToAdmin, progressController.getUserProgress);
+
+// Update user progress (admin only)
+router.patch('/:userId', protect, restrictToAdmin, progressController.updateUserProgress);
+
+// Delete user progress (admin only)
+router.delete('/:userId', protect, restrictToAdmin, progressController.deleteUserProgress);
+
+// Get progress statistics (admin only)
+router.get('/stats/overview', protect, restrictToAdmin, progressController.getProgressStats);
 
 module.exports = router;
