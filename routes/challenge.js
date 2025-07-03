@@ -146,10 +146,12 @@ router.get('/current', authenticateApprovedUser, checkTimeLimit, async (req, res
   }
 });
 
-// NEW: Get available levels - This is the missing route
+// Get available levels - FIXED AND COMPLETED IMPLEMENTATION
 router.get('/levels', authenticateApprovedUser, async (req, res) => {
   try {
     const user = req.user;
+    
+    // Get config to determine max levels
     const config = await Config.getConfig();
     
     // Get all available challenges, sorted by level
@@ -157,38 +159,61 @@ router.get('/levels', authenticateApprovedUser, async (req, res) => {
       .sort({ level: 1 })
       .limit(config.maxLevels);
     
+    if (!challenges || challenges.length === 0) {
+      return res.json({
+        levels: [],
+        totalLevels: 0,
+        userProgress: {
+          currentLevel: user.currentLevel,
+          completedLevels: user.completedLevels || [],
+          totalAttempts: user.totalAttempts || 0,
+          isActive: user.isActive || false,
+          hasStarted: !!user.challengeStartTime
+        },
+        message: 'No challenges available at the moment'
+      });
+    }
+    
     // Build levels array with accessibility and completion info
     const levels = challenges.map(challenge => {
-      const isCompleted = user.completedLevels.includes(challenge.level);
+      const isCompleted = user.completedLevels?.includes(challenge.level) || false;
       const isCurrent = user.currentLevel === challenge.level;
-      const isAccessible = challenge.level === 1 || user.completedLevels.includes(challenge.level - 1);
+      const isAccessible = challenge.level === 1 || user.completedLevels?.includes(challenge.level - 1) || false;
       
       return {
         level: challenge.level,
         title: challenge.title,
         description: isAccessible ? challenge.description : 'Complete previous levels to unlock',
+        hint: isAccessible && challenge.hint ? challenge.hint : null,
         isCompleted,
         isCurrent,
-        isAccessible
+        isAccessible,
+        createdAt: challenge.createdAt,
+        updatedAt: challenge.updatedAt
       };
     });
     
     res.json({
       levels,
       totalLevels: challenges.length,
+      maxLevels: config.maxLevels,
       userProgress: {
         currentLevel: user.currentLevel,
-        completedLevels: user.completedLevels,
-        totalAttempts: user.totalAttempts,
-        isActive: user.isActive,
-        hasStarted: !!user.challengeStartTime
+        completedLevels: user.completedLevels || [],
+        totalAttempts: user.totalAttempts || 0,
+        isActive: user.isActive || false,
+        hasStarted: !!user.challengeStartTime,
+        challengeStartTime: user.challengeStartTime,
+        challengeEndTime: user.challengeEndTime,
+        timeRemaining: user.getTimeRemaining ? user.getTimeRemaining() : 0
       }
     });
   } catch (error) {
     console.error('Get levels error:', error);
     res.status(500).json({ 
       error: 'Server error fetching levels',
-      code: 'GET_LEVELS_ERROR'
+      code: 'GET_LEVELS_ERROR',
+      message: 'Unable to fetch challenge levels. Please try again later.'
     });
   }
 });
@@ -421,7 +446,7 @@ router.get('/status', authenticateApprovedUser, async (req, res) => {
   }
 });
 
-// NEW: Check if user can start challenge
+// Check if user can start challenge
 router.get('/can-start', authenticateApprovedUser, async (req, res) => {
   try {
     const user = req.user;
@@ -516,7 +541,7 @@ router.get('/submissions', authenticateApprovedUser, async (req, res) => {
     const user = req.user;
     const { level } = req.query;
 
-    let submissions = user.submissions;
+    let submissions = user.submissions || [];
 
     // Filter by level if specified
     if (level) {
@@ -532,9 +557,9 @@ router.get('/submissions', authenticateApprovedUser, async (req, res) => {
         timestamp: sub.timestamp,
         isCorrect: sub.isCorrect
       })),
-      totalAttempts: user.totalAttempts,
+      totalAttempts: user.totalAttempts || 0,
       currentLevel: user.currentLevel,
-      completedLevels: user.completedLevels
+      completedLevels: user.completedLevels || []
     });
   } catch (error) {
     console.error('Get submissions error:', error);
