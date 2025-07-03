@@ -8,32 +8,27 @@ const app = express();
 // Enhanced CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // If there's no origin (like for mobile apps or curl requests), allow it
     if (!origin) return callback(null, true);
-    
-    // Get allowed origins from environment variable
-    const allowedOrigins = process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-      : ['http://localhost:3000'];
-    
-    // Always allow localhost 
-    const developmentOrigins = [
-      'http://localhost:3000'
+
+    // List of allowed origins
+    const allowedOrigins = [
+      'http://localhost:3000',            // Local development origin
+      'https://biztrastech.vercel.app'    // Production origin
     ];
-    
-    const allAllowedOrigins = [...new Set([...allowedOrigins, ...developmentOrigins])];
-    
+
     console.log('Request Origin:', origin);
-    console.log('Allowed Origins:', allAllowedOrigins);
-    
-    if (allAllowedOrigins.includes(origin)) {
-      return callback(null, true);
+    console.log('Allowed Origins:', allowedOrigins);
+
+    // Check if the request origin is in the allowed origins list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);  // Allow the request
     } else {
       console.error('CORS Error: Origin not allowed:', origin);
-      return callback(new Error('Not allowed by CORS'));
+      return callback(new Error('Not allowed by CORS'));  // Reject the request
     }
   },
-  credentials: true,
+  credentials: true, // Allow credentials (cookies, authorization headers)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Origin',
@@ -45,7 +40,7 @@ const corsOptions = {
     'Pragma'
   ],
   exposedHeaders: ['Authorization'],
-  maxAge: 86400 // 24 hours
+  maxAge: 86400, // 24 hours
 };
 
 // Apply CORS middleware
@@ -75,7 +70,7 @@ app.use((req, res, next) => {
 // Database connection with better error handling
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI 
+    const mongoURI = process.env.MONGODB_URI;
     await mongoose.connect(mongoURI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
