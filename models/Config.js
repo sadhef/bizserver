@@ -33,17 +33,17 @@ const configSchema = new mongoose.Schema({
   },
   challengeTitle: {
     type: String,
-    default: 'BizTras CTF Challenge',
+    default: 'Re-Challenge CTF Challenge',
     maxlength: 100
   },
   challengeDescription: {
     type: String,
-    default: 'Welcome to the BizTras Capture The Flag Challenge!',
+    default: 'Welcome to the Re-Challenge Capture The Flag Challenge!',
     maxlength: 500
   },
   thankYouMessage: {
     type: String,
-    default: 'Thank you for participating in the BizTras CTF Challenge!',
+    default: 'Thank you for participating in the Re-Challenge CTF Challenge!',
     maxlength: 500
   },
   adminEmails: [{

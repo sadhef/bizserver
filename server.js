@@ -52,7 +52,7 @@ app.use('/api/challenge', require('./routes/challenge'));
 
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'BizTras CTF Server Running!',
+    message: 'Re-Challenge CTF Server Running!',
     status: 'healthy',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'

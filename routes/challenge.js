@@ -146,6 +146,53 @@ router.get('/current', authenticateApprovedUser, checkTimeLimit, async (req, res
   }
 });
 
+// NEW: Get available levels - This is the missing route
+router.get('/levels', authenticateApprovedUser, async (req, res) => {
+  try {
+    const user = req.user;
+    const config = await Config.getConfig();
+    
+    // Get all available challenges, sorted by level
+    const challenges = await Challenge.find({ isActive: true })
+      .sort({ level: 1 })
+      .limit(config.maxLevels);
+    
+    // Build levels array with accessibility and completion info
+    const levels = challenges.map(challenge => {
+      const isCompleted = user.completedLevels.includes(challenge.level);
+      const isCurrent = user.currentLevel === challenge.level;
+      const isAccessible = challenge.level === 1 || user.completedLevels.includes(challenge.level - 1);
+      
+      return {
+        level: challenge.level,
+        title: challenge.title,
+        description: isAccessible ? challenge.description : 'Complete previous levels to unlock',
+        isCompleted,
+        isCurrent,
+        isAccessible
+      };
+    });
+    
+    res.json({
+      levels,
+      totalLevels: challenges.length,
+      userProgress: {
+        currentLevel: user.currentLevel,
+        completedLevels: user.completedLevels,
+        totalAttempts: user.totalAttempts,
+        isActive: user.isActive,
+        hasStarted: !!user.challengeStartTime
+      }
+    });
+  } catch (error) {
+    console.error('Get levels error:', error);
+    res.status(500).json({ 
+      error: 'Server error fetching levels',
+      code: 'GET_LEVELS_ERROR'
+    });
+  }
+});
+
 // Submit flag - UPDATED with enhanced completion handling
 router.post('/submit', 
   authenticateApprovedUser, 
