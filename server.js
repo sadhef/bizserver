@@ -6,7 +6,7 @@ require('dotenv').config();
 const app = express();
 
 const allowedOrigins = [
-  'https://biztrastech.vercel.app',  // Production frontend
+  'https://rechallenge.vercel.app',  // Production frontend
   'http://localhost:3000'            // Development frontend
 ];
 
